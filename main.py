@@ -836,7 +836,15 @@ class Updater(QDialog):
 
                 app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
 
-                request = get(asset["url"], stream=True, headers={"Accept": "application/octet-stream"})
+                while True:
+                    try:
+                        request = get(asset["url"], stream=True, headers={"Accept": "application/octet-stream"})
+
+                        break
+
+                    except ConnectionError:
+                        continue
+
                 request.raw.decode_content = True
 
                 with open(EXECUTABLE_FILE, "wb") as executable:

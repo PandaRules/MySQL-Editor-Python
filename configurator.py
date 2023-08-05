@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QWidget
 )
 from requests import get
+from requests.exceptions import ConnectionError
 
 EXECUTABLE_NAME = "MySQL Editor.bin"
 CONFIGURATOR_NAME = "MySQL Editor Configurator.bin"
@@ -82,7 +83,14 @@ class Installer(QDialog):
         if not isdir(EXECUTABLE_PATH):
             mkdir(EXECUTABLE_PATH)
 
-        request = get("https://api.github.com/repos/PandaRules/MySQL-Editor-Python/releases/latest")
+        try:
+            request = get("https://api.github.com/repos/PandaRules/MySQL-Editor-Python/releases/latest")
+
+        except ConnectionError:
+            self.status.setText("No internet connection")
+
+            return
+
         release = request.json()
 
         noRelease = True
@@ -106,7 +114,15 @@ class Installer(QDialog):
 
             app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
 
-            request = get(asset["url"], stream=True, headers={"Accept": "application/octet-stream"})
+            while True:
+                try:
+                    request = get(asset["url"], stream=True, headers={"Accept": "application/octet-stream"})
+
+                    break
+
+                except ConnectionError:
+                    continue
+
             request.raw.decode_content = True
 
             with open(file, "wb") as executable:
