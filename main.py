@@ -1,4 +1,4 @@
-from os import mkdir, getcwd
+from os import getcwd, getenv, mkdir
 from os.path import isdir, join, isfile
 from pickle import load, dump
 from sys import platform, exit
@@ -15,6 +15,14 @@ from requests import get
 from requests.exceptions import ConnectionError
 
 global connection
+
+EXECUTABLE_NAME = "MySQL Editor.bin"
+CONFIGURATOR_NAME = "MySQL Editor Configurator.bin"
+EXECUTABLE_PATH = join(getenv("HOME"), ".local", "share", "MySQL Editor")
+EXECUTABLE_FILE = join(EXECUTABLE_PATH, EXECUTABLE_NAME)
+CONFIGURATOR_FILE = join(EXECUTABLE_PATH, CONFIGURATOR_NAME)
+CONFIG_PATH = join(getenv("HOME"), ".config", "MySQL Editor")
+UPDATE_FILE = join(CONFIG_PATH, "update.dat")
 
 
 class Window(QMainWindow):
@@ -454,19 +462,18 @@ class Window(QMainWindow):
                 QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
             )
 
-            match option:
-                case QMessageBox.StandardButton.Save:
-                    for file in changedFiles:
-                        self.currentWidget = file
-                        self.saveFile()
+            if option == QMessageBox.StandardButton.Save:
+                for file in changedFiles:
+                    self.currentWidget = file
+                    self.saveFile()
 
-                    event.accept()
+                event.accept()
 
-                case QMessageBox.StandardButton.Discard:
-                    event.accept()
+            elif option == QMessageBox.StandardButton.Discard:
+                event.accept()
 
-                case QMessageBox.StandardButton.Cancel:
-                    event.ignore()
+            else:
+                event.ignore()
 
         else:
             event.accept()
@@ -789,8 +796,8 @@ class Updater(QDialog):
     def updateProgram(self):
         self.show()
 
-        if not isdir(executablePath):
-            mkdir(executablePath)
+        if not isdir(EXECUTABLE_PATH):
+            mkdir(EXECUTABLE_PATH)
 
         try:
             request = get("https://api.github.com/repos/PandaRules/MySQL-Editor-Python/releases/latest")
@@ -801,15 +808,15 @@ class Updater(QDialog):
 
         release = request.json()
 
-        if not isfile(updateFile):
+        if not isfile(UPDATE_FILE):
             version = "v0.0.0.0"
 
         else:
-            with open(updateFile, "rb") as versionInfo:
+            with open(UPDATE_FILE, "rb") as versionInfo:
                 version = load(versionInfo).get("Version")
 
         for asset in release["assets"]:
-            if asset["name"].replace('-', ' ') == executableName and version != release["name"]:
+            if asset["name"].replace('-', ' ') == EXECUTABLE_NAME and version != release["name"]:
                 choice = QMessageBox.question(
                     self,
                     "MySQL Editor Updater",
@@ -832,7 +839,7 @@ class Updater(QDialog):
                 request = get(asset["url"], stream=True, headers={"Accept": "application/octet-stream"})
                 request.raw.decode_content = True
 
-                with open(executableFile, "wb") as executable:
+                with open(EXECUTABLE_FILE, "wb") as executable:
                     totalSize = asset["size"]
                     size = 0
 
@@ -840,7 +847,7 @@ class Updater(QDialog):
                         size += executable.write(chunk)
                         progressBar.setValue(size * 100 / totalSize)
 
-                with open(updateFile, "wb") as versionInfo:
+                with open(UPDATE_FILE, "wb") as versionInfo:
                     dump({"Version": release["name"]}, versionInfo)
 
                 self.status.setText("Successfully Updated!\nRestart for changes to take effect.")
@@ -855,30 +862,24 @@ class Updater(QDialog):
 if __name__ == '__main__':
     app = QApplication()
 
-    if platform == "win32":
-        from windows import executablePath, executableFile, updateFile, configPath, executableName
-
-    elif platform == "linux":
-        from linux import executablePath, executableFile, updateFile, configPath, executableName
-
-    else:
-        unsupported = QLabel("Only Windows and Linux are supported")
+    if platform != "linux":
+        unsupported = QLabel("This is the configurator for Linux systems")
         unsupported.show()
 
         exit(app.exec())
 
     cwd = getcwd()
 
-    if executablePath != cwd:
-        executablePath = cwd
-        configPath = cwd
-        executableFile = join(cwd, executableName)
+    if EXECUTABLE_PATH != cwd:
+        EXECUTABLE_PATH = cwd
+        CONFIG_PATH = cwd
+        EXECUTABLE_FILE = join(cwd, EXECUTABLE_NAME)
 
-    if not isdir(configPath):
-        mkdir(configPath)
+    if not isdir(CONFIG_PATH):
+        mkdir(CONFIG_PATH)
 
-    configFile = join(configPath, "config.dat")
-    sessionFile = join(configPath, "sessions.dat")
+    configFile = join(CONFIG_PATH, "config.dat")
+    sessionFile = join(CONFIG_PATH, "sessions.dat")
 
     if isfile(configFile):
         with open(configFile, "rb") as file:

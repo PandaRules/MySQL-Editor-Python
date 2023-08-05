@@ -1,5 +1,5 @@
-from os import mkdir, remove, removedirs
-from os.path import isdir
+from os import getenv, mkdir, remove, removedirs, system
+from os.path import isdir, join
 from pickle import dump
 from sys import platform, exit
 
@@ -9,6 +9,61 @@ from PySide6.QtWidgets import (
     QWidget
 )
 from requests import get
+
+EXECUTABLE_NAME = "MySQL Editor.bin"
+CONFIGURATOR_NAME = "MySQL Editor Configurator.bin"
+EXECUTABLE_PATH = join(getenv("HOME"), ".local", "share", "MySQL Editor")
+EXECUTABLE_FILE = join(EXECUTABLE_PATH, EXECUTABLE_NAME)
+CONFIGURATOR_FILE = join(EXECUTABLE_PATH, CONFIGURATOR_NAME)
+CONFIG_PATH = join(getenv("HOME"), ".config", "MySQL Editor")
+UPDATE_FILE = join(CONFIG_PATH, "update.dat")
+
+
+def createShortcut():
+    desktopPath = join(getenv("HOME"), ".local", "share", "applications")
+
+    if not isdir(desktopPath):
+        mkdir(desktopPath)
+
+    with open(join(desktopPath, "MySQL Editor.desktop"), "w") as shortcut:
+        shortcut.writelines([
+            "[Desktop Entry]\n",
+            "Comment=Tool for viewing and editing MySQL Databases\n",
+            f"Exec='{EXECUTABLE_FILE}'\n",
+            "GenericName=SQL Editor\n",
+            "Keywords=SQL;\n",
+            "Name=MySQL Editor\n",
+            "NoDisplay=false\n",
+            "StartupNotify=true\n",
+            "Terminal=false\n",
+            "Type=Application\n"
+        ])
+
+    with open(join(desktopPath, "MySQL Editor Configurator.desktop"), "w") as shortcut:
+        shortcut.writelines([
+            "[Desktop Entry]\n",
+            "Comment=Configurator for MySQL Editor\n",
+            f"Exec='{CONFIGURATOR_FILE}'\n",
+            "Keywords=SQL;\n",
+            "Name=MySQL Editor Configurator\n",
+            "NoDisplay=false\n",
+            "StartupNotify=true\n",
+            "Terminal=false\n",
+            "Type=Application\n"
+        ])
+
+    system(f"chmod +x '{EXECUTABLE_FILE}'")
+    system(f"chmod +x '{CONFIGURATOR_FILE}'")
+
+
+def removeShortcut():
+    desktopPath = join(getenv("HOME"), ".local", "share", "applications")
+
+    if not isdir(desktopPath):
+        return
+
+    remove(join(desktopPath, "MySQL Editor.desktop"))
+    remove(join(desktopPath, "MySQL Editor Configurator.desktop"))
 
 
 class Installer(QDialog):
@@ -24,8 +79,8 @@ class Installer(QDialog):
     def install(self):
         self.show()
 
-        if not isdir(executablePath):
-            mkdir(executablePath)
+        if not isdir(EXECUTABLE_PATH):
+            mkdir(EXECUTABLE_PATH)
 
         request = get("https://api.github.com/repos/PandaRules/MySQL-Editor-Python/releases/latest")
         release = request.json()
@@ -35,11 +90,11 @@ class Installer(QDialog):
         progressBar = QProgressBar()
 
         for asset in release["assets"]:
-            if asset["name"].replace('-', ' ') == executableName:
-                file = executableFile
+            if asset["name"].replace('-', ' ') == EXECUTABLE_NAME:
+                file = EXECUTABLE_FILE
 
-            elif asset["name"].replace('-', ' ') == configuratorName:
-                file = configuratorFile
+            elif asset["name"].replace('-', ' ') == CONFIGURATOR_NAME:
+                file = CONFIGURATOR_FILE
 
             else:
                 continue
@@ -70,7 +125,7 @@ class Installer(QDialog):
             self.status.setText("No suitable release found")
 
         else:
-            with open(updateFile, "wb") as versionInfo:
+            with open(UPDATE_FILE, "wb") as versionInfo:
                 dump({"Version": release["name"]}, versionInfo)
 
             self.status.setText("Successfully installed!")
@@ -90,12 +145,12 @@ class Uninstaller(QDialog):
     def uninstall(self):
         self.show()
 
-        if not isdir(executablePath):
+        if not isdir(EXECUTABLE_PATH):
             self.status.setText("MySQL Editor is not installed")
             return
 
-        remove(executableFile)
-        removedirs(executablePath)
+        remove(EXECUTABLE_FILE)
+        removedirs(EXECUTABLE_PATH)
         removeShortcut()
 
         self.status.setText("Successfully uninstalled")
@@ -104,16 +159,8 @@ class Uninstaller(QDialog):
 if __name__ == '__main__':
     app = QApplication()
 
-    if platform == "win32":
-        from windows import (createShortcut, configuratorFile, configuratorName, executableFile, executableName,
-                             executablePath, removeShortcut, updateFile)
-
-    elif platform == "linux":
-        from linux import (createShortcut, configuratorFile, configuratorName, executableFile, executableName,
-                           executablePath, removeShortcut, updateFile)
-
-    else:
-        unsupported = QLabel("Only Windows and Linux are supported")
+    if platform != "linux":
+        unsupported = QLabel("This is the configurator for Linux systems")
         unsupported.show()
 
         exit(app.exec())
