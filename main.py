@@ -751,15 +751,15 @@ class SettingsPage(QDialog):
         self.theme = QComboBox()
         self.theme.addItems(QStyleFactory().keys())
 
-        update = QPushButton("Update")
-        update.clicked.connect(self.saveSettings)
+        updateButton = QPushButton("Update")
+        updateButton.clicked.connect(self.saveSettings)
 
         checkUpdates = QPushButton("Check for updates")
-        checkUpdates.clicked.connect(lambda: Updater(self).updateProgram())
+        checkUpdates.clicked.connect(lambda: update(self))
 
         self.layout().setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
         self.layout().addRow(QLabel("Theme:"), self.theme)
-        self.layout().addRow(update)
+        self.layout().addRow(updateButton)
         self.layout().addRow(self.message)
         self.layout().addRow(QLabel("Update Checker"))
         self.layout().addRow(checkUpdates)
@@ -783,88 +783,103 @@ class SettingsPage(QDialog):
         self.message.setText("Changes will take place once you restart the application")
 
 
-class Updater(QDialog):
-    def __init__(self, parent):
-        super().__init__(parent)
+@Slot()
+def update(parent):
+    updater = QDialog(parent)
+    updater.setWindowTitle("MySql Editor Updater")
 
-        self.setWindowTitle("MySQL Editor Updater")
-        self.setLayout(QVBoxLayout())
+    status = QLabel()
 
-        self.status = QLabel()
-        self.layout().addWidget(self.status)
+    updater.setLayout(QVBoxLayout())
+    updater.layout().addWidget(status)
 
-    def updateProgram(self):
-        self.show()
+    if not isdir(EXECUTABLE_PATH):
+        mkdir(EXECUTABLE_PATH)
 
-        if not isdir(EXECUTABLE_PATH):
-            mkdir(EXECUTABLE_PATH)
+    try:
+        request = get("https://api.github.com/repos/PandaRules/MySQL-Editor-Python/releases/latest")
 
-        try:
-            request = get("https://api.github.com/repos/PandaRules/MySQL-Editor-Python/releases/latest")
+    except ConnectionError:
+        updater.show()
+        status.setText("No internet connection")
+        status.show()
 
-        except ConnectionError:
-            self.status.setText("No internet connection")
-            return
+        return
 
-        release = request.json()
+    release = request.json()
 
-        if not isfile(UPDATE_FILE):
-            version = "v0.0.0.0"
+    if not isfile(UPDATE_FILE):
+        version = "v0.0.0"
+
+    else:
+        with open(UPDATE_FILE, "rb") as versionInfo:
+            version = load(versionInfo).get("Version")
+
+    if version == release["tag_name"]:
+        updater.show()
+        status.setText("No update found")
+        status.show()
+
+        return
+
+    choice = QMessageBox.question(
+        updater,
+        "MySQL Editor Updater",
+        "An update is available.\nWould you like to update?",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+    )
+
+    if choice == QMessageBox.StandardButton.No:
+        updater.close()
+        app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+
+        return
+
+    updater.show()
+    status.show()
+
+    progressBar = QProgressBar()
+    updater.layout().addWidget(progressBar)
+
+    for asset in release["assets"]:
+        if asset["name"].replace('-', ' ') == EXECUTABLE_NAME:
+            file = EXECUTABLE_FILE
+
+        elif asset["name"].replace('-', ' ') == CONFIGURATOR_NAME:
+            file = CONFIGURATOR_FILE
 
         else:
-            with open(UPDATE_FILE, "rb") as versionInfo:
-                version = load(versionInfo).get("Version")
+            continue
 
-        for asset in release["assets"]:
-            if asset["name"].replace('-', ' ') == EXECUTABLE_NAME and version != release["name"]:
-                choice = QMessageBox.question(
-                    self,
-                    "MySQL Editor Updater",
-                    "An update is available.\nWould you like to update?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
+        status.setText(f"Updating {asset[:-4]}... please wait")
+        status.repaint()
 
-                if choice == QMessageBox.StandardButton.No:
-                    self.close()
-                    app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
-                    return
+        app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
 
-                self.status.setText("Updating... please wait")
-                self.status.repaint()
-                progressBar = QProgressBar()
-                self.layout().addWidget(progressBar)
-
-                app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
-
-                while True:
-                    try:
-                        request = get(asset["url"], stream=True, headers={"Accept": "application/octet-stream"})
-
-                        break
-
-                    except ConnectionError:
-                        continue
-
-                request.raw.decode_content = True
-
-                with open(EXECUTABLE_FILE, "wb") as executable:
-                    totalSize = asset["size"]
-                    size = 0
-
-                    for chunk in request.iter_content(1024):
-                        size += executable.write(chunk)
-                        progressBar.setValue(size * 100 / totalSize)
-
-                with open(UPDATE_FILE, "wb") as versionInfo:
-                    dump({"Version": release["name"]}, versionInfo)
-
-                self.status.setText("Successfully Updated!\nRestart for changes to take effect.")
-                progressBar.hide()
+        while True:
+            try:
+                request = get(asset["url"], stream=True, headers={"Accept": "application/octet-stream"})
 
                 break
 
-        else:
-            self.status.setText("No update found")
+            except ConnectionError:
+                continue
+
+        request.raw.decode_content = True
+
+        with open(file, "wb") as executable:
+            totalSize = asset["size"]
+            size = 0
+
+            for chunk in request.iter_content(1024):
+                size += executable.write(chunk)
+                progressBar.setValue(size * 100 / totalSize)
+
+        with open(UPDATE_FILE, "wb") as versionInfo:
+            dump({"Version": release["tag_name"]}, versionInfo)
+
+    status.setText("Successfully Updated!\nRestart for changes to take effect.")
+    progressBar.hide()
 
 
 if __name__ == '__main__':

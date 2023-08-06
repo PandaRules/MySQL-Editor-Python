@@ -1,9 +1,9 @@
 from os import getenv, listdir, mkdir, remove, removedirs, system
-from os.path import isdir, join
+from os.path import isdir, isfile, join
 from pickle import dump
 from sys import platform, exit
 
-from PySide6.QtCore import QEventLoop
+from PySide6.QtCore import QEventLoop, Slot
 from PySide6.QtWidgets import (
     QApplication, QDialog, QFormLayout, QLabel, QMainWindow, QProgressBar, QPushButton, QVBoxLayout,
     QWidget
@@ -20,7 +20,78 @@ CONFIG_PATH = join(getenv("HOME"), ".config", "MySQL Editor")
 UPDATE_FILE = join(CONFIG_PATH, "update.dat")
 
 
-def createShortcut():
+@Slot()
+def install():
+    installer = QDialog(configurator)
+    installer.setWindowTitle("MySQL Editor Installer")
+    installer.show()
+
+    status = QLabel()
+
+    installer.setLayout(QVBoxLayout())
+    installer.layout().addWidget(status)
+
+    status.show()
+
+    if not isdir(EXECUTABLE_PATH):
+        mkdir(EXECUTABLE_PATH)
+
+    try:
+        request = get("https://api.github.com/repos/PandaRules/MySQL-Editor-Python/releases/latest")
+
+    except ConnectionError:
+        status.setText("No internet connection")
+
+        return
+
+    release = request.json()
+
+    noRelease = True
+
+    progressBar = QProgressBar()
+    installer.layout().addWidget(progressBar)
+
+    for asset in release["assets"]:
+        if asset["name"].replace('-', ' ') == EXECUTABLE_NAME:
+            file = EXECUTABLE_FILE
+
+        elif asset["name"].replace('-', ' ') == CONFIGURATOR_NAME:
+            file = CONFIGURATOR_FILE
+
+        else:
+            continue
+
+        status.setText(f"Installing {asset['name'][:-4]}... please wait")
+        status.repaint()
+
+        app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
+
+        while True:
+            try:
+                request = get(asset["url"], stream=True, headers={"Accept": "application/octet-stream"})
+
+                break
+
+            except ConnectionError:
+                continue
+
+        request.raw.decode_content = True
+
+        with open(file, "wb") as executable:
+            totalSize = asset["size"]
+            size = 0
+
+            for chunk in request.iter_content(1024):
+                size += executable.write(chunk)
+                progressBar.setValue(size * 100 / totalSize)
+
+        noRelease = False
+
+    if noRelease:
+        status.setText("No suitable release found")
+
+        return
+
     desktopPath = join(getenv("HOME"), ".local", "share", "applications")
 
     if not isdir(desktopPath):
@@ -56,119 +127,48 @@ def createShortcut():
     system(f"chmod +x '{EXECUTABLE_FILE}'")
     system(f"chmod +x '{CONFIGURATOR_FILE}'")
 
+    with open(UPDATE_FILE, "wb") as versionInfo:
+        dump({"Version": release["tag_name"]}, versionInfo)
 
-class Installer(QDialog):
-    def __init__(self, parent):
-        super().__init__(parent)
-
-        self.setWindowTitle("MySQL Editor Installer")
-        self.setLayout(QVBoxLayout())
-
-        self.status = QLabel()
-        self.layout().addWidget(self.status)
-
-    def install(self):
-        self.show()
-
-        if not isdir(EXECUTABLE_PATH):
-            mkdir(EXECUTABLE_PATH)
-
-        try:
-            request = get("https://api.github.com/repos/PandaRules/MySQL-Editor-Python/releases/latest")
-
-        except ConnectionError:
-            self.status.setText("No internet connection")
-
-            return
-
-        release = request.json()
-
-        noRelease = True
-
-        progressBar = QProgressBar()
-
-        for asset in release["assets"]:
-            if asset["name"].replace('-', ' ') == EXECUTABLE_NAME:
-                file = EXECUTABLE_FILE
-
-            elif asset["name"].replace('-', ' ') == CONFIGURATOR_NAME:
-                file = CONFIGURATOR_FILE
-
-            else:
-                continue
-
-            progressBar.setValue(0)
-            self.status.setText(f"Installing {asset['name'][:-4]}... please wait")
-            self.status.repaint()
-            self.layout().addWidget(progressBar)
-
-            app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
-
-            while True:
-                try:
-                    request = get(asset["url"], stream=True, headers={"Accept": "application/octet-stream"})
-
-                    break
-
-                except ConnectionError:
-                    continue
-
-            request.raw.decode_content = True
-
-            with open(file, "wb") as executable:
-                totalSize = asset["size"]
-                size = 0
-
-                for chunk in request.iter_content(1024):
-                    size += executable.write(chunk)
-                    progressBar.setValue(size * 100 / totalSize)
-
-            createShortcut()
-
-            noRelease = False
-
-        if noRelease:
-            self.status.setText("No suitable release found")
-
-        else:
-            with open(UPDATE_FILE, "wb") as versionInfo:
-                dump({"Version": release["name"]}, versionInfo)
-
-            self.status.setText("Successfully installed!")
-            progressBar.hide()
+    status.setText("Successfully installed!")
+    progressBar.hide()
 
 
-class Uninstaller(QDialog):
-    def __init__(self, parent):
-        super().__init__(parent)
+@Slot()
+def uninstall():
+    uninstaller = QDialog(configurator)
+    uninstaller.setWindowTitle("MySQL Editor Uninstaller")
+    uninstaller.show()
 
-        self.setWindowTitle("MySQL Editor Uninstaller")
-        self.setLayout(QVBoxLayout())
+    status = QLabel()
 
-        self.status = QLabel()
-        self.layout().addWidget(self.status)
+    uninstaller.setLayout(QVBoxLayout())
+    uninstaller.layout().addWidget(status)
 
-    def uninstall(self):
-        self.show()
+    installed = False
 
-        if not isdir(EXECUTABLE_PATH):
-            self.status.setText("MySQL Editor is not installed")
-            return
-
+    if isdir(EXECUTABLE_PATH):
         for file in listdir(EXECUTABLE_PATH):
-            remove(file)
+            remove(join(EXECUTABLE_PATH, file))
 
         removedirs(EXECUTABLE_PATH)
+        installed = True
 
-        desktopPath = join(getenv("HOME"), ".local", "share", "applications")
+    desktopPath = join(getenv("HOME"), ".local", "share", "applications")
 
-        if isdir(desktopPath):
-            for file in listdir(desktopPath):
-                remove(file)
+    executableShortcut = join(desktopPath, "MySQL Editor.desktop")
+    configuratorShortcut = join(desktopPath, "MySQL Editor Configurator.desktop")
 
-            removedirs(desktopPath)
+    if isfile(executableShortcut):
+        remove(executableShortcut)
+        installed = True
 
-        self.status.setText("Successfully uninstalled")
+    if isfile(configuratorShortcut):
+        remove(configuratorShortcut)
+        installed = True
+
+    status.show()
+    status.setText("Successfully uninstalled" if installed else "MySQL Editor is not installed")
 
 
 if __name__ == '__main__':
@@ -186,8 +186,8 @@ if __name__ == '__main__':
     installButton = QPushButton("Install MySQL Editor")
     uninstallButton = QPushButton("Uninstall MySQL Editor")
 
-    installButton.clicked.connect(lambda: Installer(configurator).install())
-    uninstallButton.clicked.connect(lambda: Uninstaller(configurator).uninstall())
+    installButton.clicked.connect(install)
+    uninstallButton.clicked.connect(uninstall)
 
     centralWidget = QWidget()
     centralWidget.setLayout(QFormLayout())
