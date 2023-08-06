@@ -57,18 +57,6 @@ def createShortcut():
     system(f"chmod +x '{CONFIGURATOR_FILE}'")
 
 
-def removeShortcut():
-    desktopPath = join(getenv("HOME"), ".local", "share", "applications")
-
-    if not isdir(desktopPath):
-        return
-
-    for file in listdir(desktopPath):
-        remove(file)
-
-    removedirs(desktopPath)
-
-
 class Installer(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
@@ -167,10 +155,18 @@ class Uninstaller(QDialog):
             self.status.setText("MySQL Editor is not installed")
             return
 
-        remove(CONFIGURATOR_FILE)
-        remove(EXECUTABLE_FILE)
+        for file in listdir(EXECUTABLE_PATH):
+            remove(file)
+
         removedirs(EXECUTABLE_PATH)
-        removeShortcut()
+
+        desktopPath = join(getenv("HOME"), ".local", "share", "applications")
+
+        if isdir(desktopPath):
+            for file in listdir(desktopPath):
+                remove(file)
+
+            removedirs(desktopPath)
 
         self.status.setText("Successfully uninstalled")
 
