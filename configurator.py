@@ -1,4 +1,4 @@
-from os import getenv, mkdir, remove, removedirs, system
+from os import getenv, listdir, mkdir, remove, removedirs, system
 from os.path import isdir, join
 from pickle import dump
 from sys import platform, exit
@@ -63,8 +63,10 @@ def removeShortcut():
     if not isdir(desktopPath):
         return
 
-    remove(join(desktopPath, "MySQL Editor.desktop"))
-    remove(join(desktopPath, "MySQL Editor Configurator.desktop"))
+    for file in listdir(desktopPath):
+        remove(file)
+
+    removedirs(desktopPath)
 
 
 class Installer(QDialog):
@@ -165,6 +167,7 @@ class Uninstaller(QDialog):
             self.status.setText("MySQL Editor is not installed")
             return
 
+        remove(CONFIGURATOR_FILE)
         remove(EXECUTABLE_FILE)
         removedirs(EXECUTABLE_PATH)
         removeShortcut()
