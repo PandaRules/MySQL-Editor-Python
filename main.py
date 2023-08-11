@@ -1,12 +1,12 @@
+from configparser import ConfigParser
 from os import getcwd, getenv, mkdir
-from os.path import isdir, join, isfile
-from pickle import load, dump
+from os.path import isdir, join
 from sys import platform, exit
 
 from PySide6.QtCore import Slot, Qt, QEventLoop
 from PySide6.QtWidgets import (
     QApplication, QComboBox, QDialog, QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QHeaderView, QLabel, QLayout,
-    QLineEdit, QMainWindow, QMessageBox, QProgressBar, QPushButton, QSplitter, QStyleFactory, QTableWidget,
+    QLineEdit, QMainWindow, QMenuBar, QMessageBox, QProgressBar, QPushButton, QSplitter, QStyleFactory, QTableWidget,
     QTableWidgetItem, QTabWidget, QTextEdit, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget
 )
 from mysql.connector import connect
@@ -16,13 +16,30 @@ from requests.exceptions import ConnectionError
 
 global connection
 
-EXECUTABLE_NAME = "MySQL Editor.bin"
-CONFIGURATOR_NAME = "MySQL Editor Configurator.bin"
-EXECUTABLE_PATH = join(getenv("HOME"), ".local", "share", "MySQL Editor")
-EXECUTABLE_FILE = join(EXECUTABLE_PATH, EXECUTABLE_NAME)
-CONFIGURATOR_FILE = join(EXECUTABLE_PATH, CONFIGURATOR_NAME)
-CONFIG_PATH = join(getenv("HOME"), ".config", "MySQL Editor")
-UPDATE_FILE = join(CONFIG_PATH, "update.dat")
+
+if platform == "linux":
+    EXECUTABLE_NAME = "MySQL Editor.bin"
+    CONFIGURATOR_NAME = "MySQL Editor Configurator.bin"
+    EXECUTABLE_PATH = join(getenv("HOME"), ".local", "share", "MySQL Editor")
+    CONFIG_PATH = join(getenv("HOME"), ".config", "MySQL Editor")
+
+    SUPPORTED = True
+
+elif platform == "win32":
+    EXECUTABLE_NAME = "MySQL Editor.exe"
+    CONFIGURATOR_NAME = "MySQL Editor Configurator.exe"
+    EXECUTABLE_PATH = join(getenv("APPDATA"), "MySQL Editor")
+    CONFIG_PATH = join(getenv("LOCALAPPDATA"), "MySQL Editor")
+
+    SUPPORTED = True
+
+else:
+    EXECUTABLE_NAME = ""
+    CONFIGURATOR_NAME = ""
+    EXECUTABLE_PATH = ""
+    CONFIG_PATH = ""
+
+    SUPPORTED = False
 
 
 class Window(QMainWindow):
@@ -62,15 +79,14 @@ class Window(QMainWindow):
 
         self.currentWidget: QueryMode | None = None
 
-        self.queryTabs.currentChanged.connect(lambda: self.updateQueryDetails(self.queryTabs.currentWidget()))
-        self.queryTabs.addTab(QueryMode(self), "Query - 1")
-        self.queryTabs.setTabsClosable(True)
-        self.queryTabs.tabCloseRequested.connect(self.removeQueryTab)
-
         addButton = QPushButton("+")
         addButton.clicked.connect(self.addQueryTab)
 
         self.queryTabs.setCornerWidget(addButton)
+        self.queryTabs.currentChanged.connect(lambda: self.updateQueryDetails(self.queryTabs.currentWidget()))
+        self.queryTabs.addTab(QueryMode(self), "Query - 1")
+        self.queryTabs.setTabsClosable(True)
+        self.queryTabs.tabCloseRequested.connect(self.removeQueryTab)
 
         self.databases.setHeaderHidden(True)
         self.databases.currentItemChanged.connect(self.prepareTableInfo)
@@ -230,8 +246,6 @@ class Window(QMainWindow):
 
                 self.tableData.setItem(row, col, QTableWidgetItem(f'{value}'))
 
-        self.tableData.resizeColumnsToContents()
-
         self.tableActions[2].setEnabled(True)
         self.tableActions[3].setEnabled(True)
         self.tableActions[4].setEnabled(True)
@@ -279,6 +293,9 @@ class Window(QMainWindow):
                 else:
                     for col in range(self.tableData.columnCount()):
                         value = self.tableData.item(row, col).text()
+
+                        if value.isdigit():
+                            value = int(value)
 
                         if value != databaseRow[col]:
                             changedValues.append(value)
@@ -364,6 +381,8 @@ class Window(QMainWindow):
         except Error as error:
             self.currentWidget.message.setText(error.msg)
             self.currentWidget.results.setHidden(not self.currentWidget.results.count())
+
+        connection.commit()
 
     @Slot()
     def refresh(self):
@@ -638,22 +657,18 @@ class DropTableWindow(QDialog):
         self.parent().refresh()
 
 
-class SessionManager(QMainWindow):
+class SessionManager(QDialog):
     def __init__(self):
         super().__init__(None)
 
         self.setWindowTitle("Session Manager")
-        self.setCentralWidget(QWidget())
 
         self.message = QLabel()
         self.sessions = QTreeWidget()
+        self.data = {}
 
-        if isfile(sessionFile):
-            with open(sessionFile, "rb") as file:
-                self.data = load(file)
-
-        else:
-            self.data = {}
+        for session in sessions.sections():
+            self.data[session] = dict(sessions.items(session))
 
         self.sessionList = self.data.keys()
 
@@ -677,9 +692,6 @@ class SessionManager(QMainWindow):
         self.connect.clicked.connect(self.openWindow)
         self.sessions.currentItemChanged.connect(self.showCredentials)
 
-        self.menuBar().addAction("New Session", Qt.Modifier.CTRL | Qt.Key.Key_N, self.newSession)
-        self.menuBar().addAction("Settings", Qt.Modifier.CTRL | Qt.Key.Key_I, lambda: SettingsPage(self).show())
-
         credentialLayout = QGridLayout()
         credentialLayout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         credentialLayout.addWidget(QLabel("Host:"), 0, 0)
@@ -691,12 +703,22 @@ class SessionManager(QMainWindow):
         credentialLayout.addWidget(self.connect, 3, 0, 1, 2)
         credentialLayout.addWidget(self.message, 4, 0, 1, 2)
 
-        self.centralWidget().setLayout(QHBoxLayout())
-        self.centralWidget().layout().addWidget(self.sessions)
-        self.centralWidget().layout().addLayout(credentialLayout)
+        self.setLayout(QHBoxLayout())
+        self.layout().setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        self.layout().addWidget(self.sessions)
+        self.layout().addLayout(credentialLayout)
+
+        self.layout().setMenuBar(QMenuBar())
+        self.layout().menuBar().addAction("New Session", Qt.Modifier.CTRL | Qt.Key.Key_N, self.newSession)
+        self.layout().menuBar().addAction("Remove Session", Qt.Modifier.CTRL | Qt.Key.Key_R, self.removeSession)
+        self.layout().menuBar().addAction("Settings", Qt.Modifier.CTRL | Qt.Key.Key_I,
+                                          lambda: SettingsPage(self).show())
 
     @Slot(QTreeWidgetItem)
     def showCredentials(self, item):
+        if item is None:
+            return
+
         data = self.data.get(item.text(0))
 
         self.host.setEnabled(True)
@@ -704,9 +726,9 @@ class SessionManager(QMainWindow):
         self.password.setEnabled(True)
         self.connect.setEnabled(True)
 
-        self.host.setText(data.get("Host"))
-        self.user.setText(data.get("User"))
-        self.password.setText(data.get("Password"))
+        self.host.setText(data.get("host"))
+        self.user.setText(data.get("user"))
+        self.password.setText(data.get("password"))
 
     @Slot()
     def newSession(self):
@@ -714,6 +736,32 @@ class SessionManager(QMainWindow):
         self.data[session] = {}
 
         self.sessions.addTopLevelItem(QTreeWidgetItem((session,)))
+
+    @Slot()
+    def removeSession(self):
+        item = self.sessions.currentItem()
+
+        if item is None:
+            return
+
+        sessionName = item.text(0)
+        self.sessions.setCurrentItem(None)
+        self.sessions.takeTopLevelItem(self.sessions.indexOfTopLevelItem(item))
+
+        if not self.sessions.topLevelItemCount():
+            self.host.setText("")
+            self.user.setText("")
+            self.password.setText("")
+
+            self.host.setEnabled(False)
+            self.user.setEnabled(False)
+            self.password.setEnabled(False)
+
+        self.data.pop(sessionName)
+        sessions.remove_section(sessionName)
+
+        with open(sessionFile, "w") as file:
+            sessions.write(file)
 
     @Slot()
     def openWindow(self):
@@ -730,10 +778,13 @@ class SessionManager(QMainWindow):
             self.message.setText(error.msg)
             return
 
-        self.data[self.sessions.currentItem().text(0)] = {"Host": host, "User": user, "Password": password}
+        self.data[self.sessions.currentItem().text(0)] = {"host": host, "user": user, "password": password}
 
-        with open(sessionFile, "wb") as credentials:
-            dump(self.data, credentials)
+        for session, credentials in self.data.items():
+            sessions[session] = credentials
+
+        with open(sessionFile, "w") as credentials:
+            sessions.write(credentials)
 
         self.close()
 
@@ -764,10 +815,6 @@ class SettingsPage(QDialog):
         self.layout().addRow(QLabel("Update Checker"))
         self.layout().addRow(checkUpdates)
 
-        if isfile(configFile):
-            with open(configFile, "rb") as file:
-                app.setStyle(load(file).get("Theme"))
-
         self.theme.setCurrentText(app.style().name())
         self.theme.currentTextChanged.connect(lambda theme: app.setStyle(theme))
 
@@ -777,8 +824,10 @@ class SettingsPage(QDialog):
     def saveSettings(self):
         self.message.show()
 
-        with open(configFile, "wb") as file:
-            dump({"Theme": self.theme.currentText()}, file)
+        settings["Settings"] = {"Theme": self.theme.currentText()}
+
+        with open(configFile, "w") as file:
+            settings.write(file)
 
         self.message.setText("Changes will take place once you restart the application")
 
@@ -808,12 +857,11 @@ def update(parent):
 
     release = request.json()
 
-    if not isfile(UPDATE_FILE):
-        version = "v0.0.0"
+    if "Update" in settings:
+        version = settings["Update"]["version"]
 
     else:
-        with open(UPDATE_FILE, "rb") as versionInfo:
-            version = load(versionInfo).get("Version")
+        version = "v0.0.0"
 
     if version == release["tag_name"]:
         updater.show()
@@ -841,17 +889,23 @@ def update(parent):
     progressBar = QProgressBar()
     updater.layout().addWidget(progressBar)
 
+    flag = False
+
     for asset in release["assets"]:
-        if asset["name"].replace('-', ' ') == EXECUTABLE_NAME:
+        name = asset["name"].replace('-', ' ')
+
+        if name == EXECUTABLE_NAME:
             file = EXECUTABLE_FILE
 
-        elif asset["name"].replace('-', ' ') == CONFIGURATOR_NAME:
+        elif name == CONFIGURATOR_NAME:
             file = CONFIGURATOR_FILE
 
         else:
             continue
 
-        status.setText(f"Updating {asset[:-4]}... please wait")
+        flag = True
+
+        status.setText(f"Updating {name[:-4]}... please wait")
         status.repaint()
 
         app.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents)
@@ -875,18 +929,25 @@ def update(parent):
                 size += executable.write(chunk)
                 progressBar.setValue(size * 100 / totalSize)
 
-        with open(UPDATE_FILE, "wb") as versionInfo:
-            dump({"Version": release["tag_name"]}, versionInfo)
+    if flag:
+        settings["Update"] = {"version": release["tag_name"]}
 
-    status.setText("Successfully Updated!\nRestart for changes to take effect.")
+        with open(configFile, "w") as file:
+            settings.write(file)
+
+        status.setText("Successfully Updated!\nRestart for changes to take effect.")
+
+    else:
+        status.setText("No suitable update file found")
+
     progressBar.hide()
 
 
 if __name__ == '__main__':
     app = QApplication()
 
-    if platform != "linux":
-        unsupported = QLabel("This is the configurator for Linux systems")
+    if not SUPPORTED:
+        unsupported = QLabel("Only Windows and Linux are supported")
         unsupported.show()
 
         exit(app.exec())
@@ -896,17 +957,24 @@ if __name__ == '__main__':
     if EXECUTABLE_PATH != cwd:
         EXECUTABLE_PATH = cwd
         CONFIG_PATH = cwd
-        EXECUTABLE_FILE = join(cwd, EXECUTABLE_NAME)
+
+    EXECUTABLE_FILE = join(EXECUTABLE_PATH, EXECUTABLE_NAME)
+    CONFIGURATOR_FILE = join(EXECUTABLE_PATH, CONFIGURATOR_NAME)
 
     if not isdir(CONFIG_PATH):
         mkdir(CONFIG_PATH)
 
-    configFile = join(CONFIG_PATH, "config.dat")
-    sessionFile = join(CONFIG_PATH, "sessions.dat")
+    settings = ConfigParser()
+    sessions = ConfigParser()
 
-    if isfile(configFile):
-        with open(configFile, "rb") as file:
-            app.setStyle(load(file).get("Theme"))
+    configFile = join(CONFIG_PATH, "config.ini")
+    sessionFile = join(CONFIG_PATH, "sessions.ini")
+
+    settings.read(configFile)
+    sessions.read(sessionFile)
+
+    if "Settings" in settings:
+        app.setStyle(settings["Settings"]["Theme"])
 
     SessionManager().show()
 

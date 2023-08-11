@@ -1,6 +1,6 @@
+from configparser import ConfigParser
 from os import getenv, listdir, mkdir, remove, removedirs, system
 from os.path import isdir, isfile, join
-from pickle import dump
 from sys import platform, exit
 
 from PySide6.QtCore import QEventLoop, Slot
@@ -11,13 +11,132 @@ from PySide6.QtWidgets import (
 from requests import get
 from requests.exceptions import ConnectionError
 
-EXECUTABLE_NAME = "MySQL Editor.bin"
-CONFIGURATOR_NAME = "MySQL Editor Configurator.bin"
-EXECUTABLE_PATH = join(getenv("HOME"), ".local", "share", "MySQL Editor")
-EXECUTABLE_FILE = join(EXECUTABLE_PATH, EXECUTABLE_NAME)
-CONFIGURATOR_FILE = join(EXECUTABLE_PATH, CONFIGURATOR_NAME)
-CONFIG_PATH = join(getenv("HOME"), ".config", "MySQL Editor")
-UPDATE_FILE = join(CONFIG_PATH, "update.dat")
+if platform == "linux":
+    EXECUTABLE_NAME = "MySQL Editor.bin"
+    CONFIGURATOR_NAME = "MySQL Editor Configurator.bin"
+    EXECUTABLE_PATH = join(getenv("HOME"), ".local", "share", "MySQL Editor")
+    EXECUTABLE_FILE = join(EXECUTABLE_PATH, EXECUTABLE_NAME)
+    CONFIGURATOR_FILE = join(EXECUTABLE_PATH, CONFIGURATOR_NAME)
+    CONFIG_PATH = join(getenv("HOME"), ".config", "MySQL Editor")
+    CONFIG_FILE = join(CONFIG_PATH, "config.ini")
+
+    SUPPORTED = True
+
+    def createShortcut():
+        desktopPath = join(getenv("HOME"), ".local", "share", "applications")
+
+        if not isdir(desktopPath):
+            mkdir(desktopPath)
+
+        with open(join(desktopPath, "MySQL Editor.desktop"), "w") as shortcut:
+            shortcut.writelines([
+                "[Desktop Entry]\n",
+                "Comment=Tool for viewing and editing MySQL Databases\n",
+                f"Exec='{EXECUTABLE_FILE}'\n",
+                "GenericName=SQL Editor\n",
+                "Keywords=SQL;\n",
+                "Name=MySQL Editor\n",
+                "NoDisplay=false\n",
+                "StartupNotify=true\n",
+                "Terminal=false\n",
+                "Type=Application\n"
+            ])
+
+        with open(join(desktopPath, "MySQL Editor Configurator.desktop"), "w") as shortcut:
+            shortcut.writelines([
+                "[Desktop Entry]\n",
+                "Comment=Configurator for MySQL Editor\n",
+                f"Exec='{CONFIGURATOR_FILE}'\n",
+                "Keywords=SQL;\n",
+                "Name=MySQL Editor Configurator\n",
+                "NoDisplay=false\n",
+                "StartupNotify=true\n",
+                "Terminal=false\n",
+                "Type=Application\n"
+            ])
+
+        system(f"chmod +x '{EXECUTABLE_FILE}'")
+        system(f"chmod +x '{CONFIGURATOR_FILE}'")
+
+
+    def removeShortcut():
+        installed = False
+
+        if isdir(EXECUTABLE_PATH):
+            for file in listdir(EXECUTABLE_PATH):
+                remove(join(EXECUTABLE_PATH, file))
+
+            removedirs(EXECUTABLE_PATH)
+            installed = True
+
+        desktopPath = join(getenv("HOME"), ".local", "share", "applications")
+
+        executableShortcut = join(desktopPath, "MySQL Editor.desktop")
+        configuratorShortcut = join(desktopPath, "MySQL Editor Configurator.desktop")
+
+        if isfile(executableShortcut):
+            remove(executableShortcut)
+            installed = True
+
+        if isfile(configuratorShortcut):
+            remove(configuratorShortcut)
+            installed = True
+
+        return installed
+
+
+elif platform == "win32":
+    EXECUTABLE_NAME = "MySQL Editor.exe"
+    CONFIGURATOR_NAME = "MySQL Editor Configurator.exe"
+    EXECUTABLE_PATH = join(getenv("APPDATA"), "MySQL Editor")
+    EXECUTABLE_FILE = join(EXECUTABLE_PATH, EXECUTABLE_NAME)
+    CONFIGURATOR_FILE = join(EXECUTABLE_PATH, CONFIGURATOR_NAME)
+    CONFIG_PATH = join(getenv("LOCALAPPDATA"), "MySQL Editor")
+    CONFIG_FILE = join(CONFIG_PATH, "config.ini")
+    START_MENU_PATH = join(getenv("APPDATA"), "Microsoft", "Windows", "Start Menu", "Programs", "MySQL Editor")
+
+    SUPPORTED = True
+
+    def createShortcut():
+        if not isdir(START_MENU_PATH):
+            mkdir(START_MENU_PATH)
+
+        from win32com.client import Dispatch
+
+        shell = Dispatch("WScript.shell")
+
+        appShortcut = shell.CreateShortCut(join(START_MENU_PATH, "MySQL Editor.lnk"))
+        appShortcut.TargetPath = EXECUTABLE_FILE
+        appShortcut.save()
+
+        configuratorShortcut = shell.CreateShortCut(join(START_MENU_PATH, "MySQL Editor Configurator.lnk"))
+        configuratorShortcut.TargetPath = CONFIGURATOR_FILE
+        configuratorShortcut.save()
+
+
+    def removeShortcut():
+        installed = False
+
+        if isdir(EXECUTABLE_PATH):
+            for file in listdir(EXECUTABLE_PATH):
+                remove(join(EXECUTABLE_PATH, file))
+
+            removedirs(EXECUTABLE_PATH)
+
+            installed = True
+
+        if isdir(START_MENU_PATH):
+            for file in listdir(START_MENU_PATH):
+                remove(join(START_MENU_PATH, file))
+
+            removedirs(START_MENU_PATH)
+
+            installed = True
+
+        return installed
+
+else:
+    SUPPORTED = False
 
 
 @Slot()
@@ -92,43 +211,13 @@ def install():
 
         return
 
-    desktopPath = join(getenv("HOME"), ".local", "share", "applications")
+    createShortcut()
 
-    if not isdir(desktopPath):
-        mkdir(desktopPath)
+    settings = ConfigParser()
+    settings["Update"] = {"version": release["tag_name"]}
 
-    with open(join(desktopPath, "MySQL Editor.desktop"), "w") as shortcut:
-        shortcut.writelines([
-            "[Desktop Entry]\n",
-            "Comment=Tool for viewing and editing MySQL Databases\n",
-            f"Exec='{EXECUTABLE_FILE}'\n",
-            "GenericName=SQL Editor\n",
-            "Keywords=SQL;\n",
-            "Name=MySQL Editor\n",
-            "NoDisplay=false\n",
-            "StartupNotify=true\n",
-            "Terminal=false\n",
-            "Type=Application\n"
-        ])
-
-    with open(join(desktopPath, "MySQL Editor Configurator.desktop"), "w") as shortcut:
-        shortcut.writelines([
-            "[Desktop Entry]\n",
-            "Comment=Configurator for MySQL Editor\n",
-            f"Exec='{CONFIGURATOR_FILE}'\n",
-            "Keywords=SQL;\n",
-            "Name=MySQL Editor Configurator\n",
-            "NoDisplay=false\n",
-            "StartupNotify=true\n",
-            "Terminal=false\n",
-            "Type=Application\n"
-        ])
-
-    system(f"chmod +x '{EXECUTABLE_FILE}'")
-    system(f"chmod +x '{CONFIGURATOR_FILE}'")
-
-    with open(UPDATE_FILE, "wb") as versionInfo:
-        dump({"Version": release["tag_name"]}, versionInfo)
+    with open(CONFIG_FILE, "w") as file:
+        settings.write(file)
 
     status.setText("Successfully installed!")
     progressBar.hide()
@@ -145,43 +234,24 @@ def uninstall():
     uninstaller.setLayout(QVBoxLayout())
     uninstaller.layout().addWidget(status)
 
-    installed = False
-
-    if isdir(EXECUTABLE_PATH):
-        for file in listdir(EXECUTABLE_PATH):
-            remove(join(EXECUTABLE_PATH, file))
-
-        removedirs(EXECUTABLE_PATH)
-        installed = True
-
-    desktopPath = join(getenv("HOME"), ".local", "share", "applications")
-
-    executableShortcut = join(desktopPath, "MySQL Editor.desktop")
-    configuratorShortcut = join(desktopPath, "MySQL Editor Configurator.desktop")
-
-    if isfile(executableShortcut):
-        remove(executableShortcut)
-        installed = True
-
-    if isfile(configuratorShortcut):
-        remove(configuratorShortcut)
-        installed = True
-
     status.show()
-    status.setText("Successfully uninstalled" if installed else "MySQL Editor is not installed")
+    status.setText("Successfully uninstalled" if removeShortcut() else "MySQL Editor is not installed")
 
 
 if __name__ == '__main__':
     app = QApplication()
 
-    if platform != "linux":
-        unsupported = QLabel("This is the configurator for Linux systems")
+    if not SUPPORTED:
+        unsupported = QLabel("Only Windows and Linux are supported")
         unsupported.show()
 
         exit(app.exec())
 
     configurator = QMainWindow()
     configurator.setWindowTitle("MySQL Editor Configurator")
+    configurator.setCentralWidget(QWidget())
+    configurator.centralWidget().setLayout(QFormLayout())
+    configurator.show()
 
     installButton = QPushButton("Install MySQL Editor")
     uninstallButton = QPushButton("Uninstall MySQL Editor")
@@ -189,12 +259,7 @@ if __name__ == '__main__':
     installButton.clicked.connect(install)
     uninstallButton.clicked.connect(uninstall)
 
-    centralWidget = QWidget()
-    centralWidget.setLayout(QFormLayout())
-    centralWidget.layout().addRow(installButton)
-    centralWidget.layout().addRow(uninstallButton)
-
-    configurator.setCentralWidget(centralWidget)
-    configurator.show()
+    configurator.centralWidget().layout().addRow(installButton)
+    configurator.centralWidget().layout().addRow(uninstallButton)
 
     exit(app.exec())
