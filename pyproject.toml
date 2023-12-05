@@ -2,9 +2,6 @@
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
 [project]
 name = "mysql_editor_python"
 version = "1.0"
@@ -19,12 +16,11 @@ dependencies = [
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
-    "Operating System :: Microsoft :: Windows",
-    "Operating System :: POSIX :: Linux",
+    "Operating System :: OS Independent",
 ]
 
 [project.gui-scripts]
-mysql-editor = "mysql_editor:main"
+mysql-editor = "mysql_editor:__main__"
 
 [project.urls]
 Homepage = "https://github.com/PandaRules/MySQL-Editor-Python"
