@@ -9,8 +9,7 @@ This is a tool for viewing and editing MySQL databases written in Python.
 + # Linux
   + Requirements:
     + glibc >= 2.38
-  
-  
+
   + For standalone/portable downloads, download the `MySQL-Editor.bin` from the downloads.
   + For user installs, download the `MySQL-Editor-Configurator.bin` from the downloads and use the `Install` option there.
 
