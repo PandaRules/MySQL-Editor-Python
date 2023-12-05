@@ -7,10 +7,10 @@ from mysql.connector import MySQLConnection
 from mysql.connector.cursor import MySQLCursor
 from mysql.connector.errors import Error
 
-from add_database import AddDatabaseWindow
-from drop_database import DropDatabaseWindow
-from drop_table import DropTableWindow
-from query import QueryTab
+from mysql_editor.add_database import AddDatabaseWindow
+from mysql_editor.drop_database import DropDatabaseWindow
+from mysql_editor.drop_table import DropTableWindow
+from mysql_editor.query import QueryTab
 
 
 class Window(QMainWindow):

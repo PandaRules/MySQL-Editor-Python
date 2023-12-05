@@ -6,9 +6,9 @@ from PySide6.QtWidgets import (
 from mysql.connector import connect
 from mysql.connector.errors import Error
 
-from settings import SettingsPage, SESSIONS, SESSION_FILE
+from mysql_editor.settings import SettingsPage, SESSIONS, SESSION_FILE
 
-from window import Window
+from mysql_editor.window import Window
 
 global connection
 

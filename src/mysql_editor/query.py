@@ -1,7 +1,7 @@
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QTabWidget, QTextEdit, QVBoxLayout, QWidget, QFileDialog
 
-from files import File
+from mysql_editor.files import File
 
 
 class QueryTab(QWidget):
