@@ -1,3 +1,4 @@
+import mysql.connector.errors
 from PySide6.QtWidgets import (
     QDialog, QFormLayout, QLabel, QLayout, QLineEdit, QMessageBox, QPushButton, QTreeWidgetItem, QTreeWidget
 )
@@ -9,7 +10,6 @@ class AddDatabaseWindow(QDialog):
         super().__init__()
 
         self.setWindowTitle("Add database")
-        self.setLayout(QFormLayout())
 
         self.Cursor = cursor
         self.databases = databases
@@ -18,19 +18,20 @@ class AddDatabaseWindow(QDialog):
         button = QPushButton("Add")
         button.clicked.connect(lambda: self.add(entry.text()))
 
-        self.layout().setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
-        self.layout().addRow(QLabel("Database:"), entry)
-        self.layout().addRow(button)
+        layout = QFormLayout()
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        layout.addRow(QLabel("Database:"), entry)
+        layout.addRow(button)
+        self.setLayout(layout)
 
     def add(self, database):
-        self.Cursor.execute(f"SHOW DATABASES LIKE '{database}';")
+        try:
+            self.Cursor.execute(f"CREATE DATABASE `{database}`;")
 
-        if self.Cursor.fetchone():
-            QMessageBox.information(self, "Error", "Database already exists")
+        except mysql.connector.errors.Error as e:
+            QMessageBox.critical(self, "Error", e.msg)
 
             return
-
-        self.Cursor.execute(f"CREATE DATABASE `{database}`;")
 
         self.databases.addTopLevelItem(QTreeWidgetItem((database,)))
 

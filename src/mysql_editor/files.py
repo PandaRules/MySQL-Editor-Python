@@ -11,9 +11,6 @@ class File:
         if self.file is not None and not self.file.closed:
             self.file.close()
 
-        if self.name == name and self.file.mode == mode:
-            return
-
         self.name = name
         self.file = open(name, mode)
 

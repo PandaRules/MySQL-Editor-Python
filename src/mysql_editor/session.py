@@ -1,3 +1,5 @@
+import traceback
+
 from PySide6.QtCore import Slot, Qt
 from PySide6.QtWidgets import (
     QDialog, QGridLayout, QHBoxLayout, QLabel, QLayout,
@@ -7,7 +9,6 @@ from mysql.connector import connect
 from mysql.connector.errors import Error
 
 from mysql_editor.settings import SettingsPage, SESSIONS, SESSION_FILE
-
 from mysql_editor.window import Window
 
 global connection
@@ -46,7 +47,7 @@ class SessionManager(QDialog):
         self.sessions.setHeaderHidden(True)
 
         self.connect.clicked.connect(self.open_window)
-        self.sessions.currentItemChanged.connect(self.show_credentials)
+        self.sessions.itemSelectionChanged.connect(self.show_credentials)
 
         credential_layout = QGridLayout()
         credential_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -58,20 +59,28 @@ class SessionManager(QDialog):
         credential_layout.addWidget(self.password, 2, 1)
         credential_layout.addWidget(self.connect, 3, 0, 1, 2)
 
-        self.setLayout(QHBoxLayout())
-        self.layout().setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
-        self.layout().addWidget(self.sessions)
-        self.layout().addLayout(credential_layout)
+        layout = QHBoxLayout()
+        layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
+        layout.addWidget(self.sessions)
+        layout.addLayout(credential_layout)
 
-        self.layout().setMenuBar(QMenuBar())
-        self.layout().menuBar().addAction("New Session", Qt.Modifier.CTRL | Qt.Key.Key_N, self.new_session)
-        self.layout().menuBar().addAction("Remove Session", Qt.Modifier.CTRL | Qt.Key.Key_R, self.remove_session)
-        self.layout().menuBar().addAction("Settings", Qt.Modifier.CTRL | Qt.Key.Key_I,
-                                          lambda: SettingsPage(self).show())
+        self.menubar = QMenuBar()
+        self.menubar.addAction("New Session", Qt.Modifier.CTRL | Qt.Key.Key_N, self.new_session)
+        self.remove = self.menubar.addAction("Remove Session", Qt.Modifier.CTRL | Qt.Key.Key_R, self.remove_session)
+        self.menubar.addAction("Settings", Qt.Modifier.CTRL | Qt.Key.Key_I, lambda: SettingsPage(self).show())
+        layout.setMenuBar(self.menubar)
 
-    @Slot(QTreeWidgetItem)
-    def show_credentials(self, item):
+        self.setLayout(layout)
+
+        self.remove.setEnabled(False)
+
+    @Slot()
+    def show_credentials(self):
+        item = self.sessions.currentItem()
+
         if item is None:
+            self.remove.setEnabled(False)
+
             return
 
         data = self.data.get(item.text(0))
@@ -83,6 +92,8 @@ class SessionManager(QDialog):
 
         self.host.setText(data.get("host"))
         self.user.setText(data.get("user"))
+
+        self.remove.setEnabled(True)
 
     @Slot()
     def new_session(self):
@@ -96,6 +107,8 @@ class SessionManager(QDialog):
         item = self.sessions.currentItem()
 
         if item is None:
+            self.remove.setEnabled(False)
+
             return
 
         session_name = item.text(0)
@@ -116,6 +129,8 @@ class SessionManager(QDialog):
 
         with open(SESSION_FILE, "w") as file:
             SESSIONS.write(file)
+
+        self.remove.setEnabled(False)
 
     @Slot()
     def open_window(self):
@@ -145,4 +160,5 @@ class SessionManager(QDialog):
 
         self.close()
 
-        Window(connection).show()
+        window = Window(connection)
+        window.show()

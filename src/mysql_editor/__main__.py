@@ -2,6 +2,7 @@ import os.path
 import sys
 
 from PySide6.QtWidgets import QApplication
+
 from mysql_editor.session import SessionManager
 from mysql_editor.settings import SETTINGS, SESSIONS, CONFIG_PATH, CONFIG_FILE, SESSION_FILE
 
