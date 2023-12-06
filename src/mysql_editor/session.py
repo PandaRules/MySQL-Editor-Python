@@ -22,11 +22,6 @@ class SessionManager(QDialog):
         self.data = {}
 
         for session in SESSIONS.sections():
-            self.data[session] = dict(SESSIONS.items(session))
-
-        self.sessionList = self.data.keys()
-
-        for session in self.sessionList:
             self.sessions.addTopLevelItem(QTreeWidgetItem((session,)))
 
         self.sessions.setCurrentItem(None)
@@ -82,8 +77,8 @@ class SessionManager(QDialog):
 
         self.sessions.currentItem().setText(0, text)
 
-        self.data[text] = self.data[current_name]
-        del self.data[current_name]
+        SESSIONS[text] = SESSIONS[current_name]
+        SESSIONS.remove_section(current_name)
 
     @Slot()
     def show_credentials(self):
@@ -94,7 +89,7 @@ class SessionManager(QDialog):
 
             return
 
-        data = self.data.get(item.text(0))
+        data = SESSIONS[item.text(0)]
 
         self.session.setEnabled(True)
         self.host.setEnabled(True)
@@ -112,7 +107,7 @@ class SessionManager(QDialog):
     def new_session(self):
         sessions = []
 
-        for session in self.sessionList:
+        for session in SESSIONS.sections():
             split = session.split(' ')[-1]
 
             if not split.isdigit():
@@ -128,7 +123,7 @@ class SessionManager(QDialog):
             count += 1
 
         session = f"Session - {count}"
-        self.data[session] = {}
+        SESSIONS.add_section(session)
 
         self.sessions.addTopLevelItem(QTreeWidgetItem((session,)))
 
@@ -145,17 +140,17 @@ class SessionManager(QDialog):
         self.sessions.setCurrentItem(None)
         self.sessions.takeTopLevelItem(self.sessions.indexOfTopLevelItem(item))
 
-        if not self.sessions.topLevelItemCount():
-            self.host.setText("")
-            self.user.setText("")
-            self.password.setText("")
+        self.session.clear()
+        self.host.clear()
+        self.user.clear()
+        self.password.clear()
 
-            self.session.setEnabled(False)
-            self.host.setEnabled(False)
-            self.user.setEnabled(False)
-            self.password.setEnabled(False)
+        self.session.setEnabled(False)
+        self.host.setEnabled(False)
+        self.user.setEnabled(False)
+        self.password.setEnabled(False)
+        self.connect.setEnabled(False)
 
-        self.data.pop(session_name)
         SESSIONS.remove_section(session_name)
 
         with open(SESSION_FILE, "w") as file:
@@ -181,10 +176,7 @@ class SessionManager(QDialog):
 
         connection.autocommit = True
 
-        self.data[self.sessions.currentItem().text(0)] = {"host": host, "user": user}
-
-        for session, credentials in self.data.items():
-            SESSIONS[session] = credentials
+        SESSIONS[self.session.text()] = {"host": host, "user": user}
 
         with open(SESSION_FILE, "w") as credentials:
             SESSIONS.write(credentials)
