@@ -1,15 +1,35 @@
+import os.path
+import sys
+from configparser import ConfigParser
+
 from PySide6.QtCore import Slot, Qt
 from PySide6.QtWidgets import (
     QDialog, QGridLayout, QHBoxLayout, QLabel, QLayout,
-    QLineEdit, QMenuBar, QMessageBox, QPushButton, QTreeWidget, QTreeWidgetItem
+    QLineEdit, QMenuBar, QMessageBox, QPushButton, QTreeWidget, QTreeWidgetItem, QStyleFactory, QApplication
 )
 from mysql.connector import connect
 from mysql.connector.errors import Error
-
-from mysql_editor.settings import SettingsPage, SESSIONS, SESSION_FILE
 from mysql_editor.window import Window
 
 global connection
+
+if sys.platform == "linux":
+    CONFIG_PATH = os.path.join(os.getenv("HOME"), ".config", "MySQL Editor")
+
+elif sys.platform == "win32":
+    CONFIG_PATH = os.path.join(os.getenv("LOCALAPPDATA"), "MySQL Editor")
+
+else:
+    CONFIG_PATH = ""
+
+SETTINGS = ConfigParser()
+SESSIONS = ConfigParser()
+
+CONFIG_FILE = os.path.join(CONFIG_PATH, "config.ini")
+SESSION_FILE = os.path.join(CONFIG_PATH, "sessions.ini")
+
+SETTINGS.read(CONFIG_FILE)
+SESSIONS.read(SESSION_FILE)
 
 
 class SessionManager(QDialog):
@@ -56,20 +76,33 @@ class SessionManager(QDialog):
         credential_layout.addWidget(self.password, 3, 1)
         credential_layout.addWidget(self.connect, 4, 0, 1, 2)
 
+        self.menubar = QMenuBar()
+        self.menubar.addAction("New Session", Qt.Modifier.CTRL | Qt.Key.Key_N, self.new_session)
+        self.remove = self.menubar.addAction("Remove Session", Qt.Modifier.CTRL | Qt.Key.Key_R, self.remove_session)
+
+        theme_menu = self.menubar.addMenu("Themes")
+
+        for theme in QStyleFactory.keys():
+            theme_menu.addAction(f"{theme}", lambda theme_=theme: self.update_theme(theme_))
+
         layout = QHBoxLayout()
+        layout.setMenuBar(self.menubar)
         layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
         layout.addWidget(self.sessions)
         layout.addLayout(credential_layout)
 
-        self.menubar = QMenuBar()
-        self.menubar.addAction("New Session", Qt.Modifier.CTRL | Qt.Key.Key_N, self.new_session)
-        self.remove = self.menubar.addAction("Remove Session", Qt.Modifier.CTRL | Qt.Key.Key_R, self.remove_session)
-        self.menubar.addAction("Settings", Qt.Modifier.CTRL | Qt.Key.Key_I, lambda: SettingsPage(self).show())
-        layout.setMenuBar(self.menubar)
-
         self.setLayout(layout)
 
         self.remove.setEnabled(False)
+
+    @Slot(str)
+    def update_theme(self, theme: str):
+        QApplication.setStyle(theme)
+
+        SETTINGS["Settings"] = {"Theme": theme}
+
+        with open(CONFIG_FILE, "w") as file:
+            SETTINGS.write(file)
 
     @Slot(str)
     def rename_session(self, text: str):
