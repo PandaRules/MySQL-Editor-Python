@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mysql_editor_python"
-version = "1.0.1"
+version = "1.0.2"
 description = "A MySQL Editor"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,3 +24,4 @@ mysql-editor = "mysql_editor:__main__"
 [project.urls]
 Homepage = "https://github.com/PandaRules/MySQL-Editor-Python"
 Issues = "https://github.com/PandaRules/MySQL-Editor-Python/issues"
+Changelog = "https://github.com/PandaRules/MySQL-Editor-Python/blob/main/CHANGELOG.md"
