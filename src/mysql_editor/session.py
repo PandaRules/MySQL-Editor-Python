@@ -31,11 +31,13 @@ class SessionManager(QDialog):
 
         self.sessions.setCurrentItem(None)
 
+        self.session = QLineEdit()
         self.host = QLineEdit()
         self.user = QLineEdit()
         self.password = QLineEdit()
         self.connect = QPushButton("Connect")
 
+        self.session.setEnabled(False)
         self.host.setMaxLength(15)
         self.host.setEnabled(False)
         self.user.setEnabled(False)
@@ -44,18 +46,20 @@ class SessionManager(QDialog):
         self.connect.setEnabled(False)
         self.sessions.setHeaderHidden(True)
 
+        self.session.textEdited.connect(self.rename_session)
         self.connect.clicked.connect(self.open_window)
         self.sessions.itemSelectionChanged.connect(self.show_credentials)
 
         credential_layout = QGridLayout()
         credential_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        credential_layout.addWidget(QLabel("Host:"), 0, 0)
-        credential_layout.addWidget(self.host, 0, 1)
-        credential_layout.addWidget(QLabel("User:"), 1, 0)
-        credential_layout.addWidget(self.user, 1, 1)
-        credential_layout.addWidget(QLabel("Password:"), 2, 0)
-        credential_layout.addWidget(self.password, 2, 1)
-        credential_layout.addWidget(self.connect, 3, 0, 1, 2)
+        credential_layout.addWidget(self.session, 0, 0, 1, 2)
+        credential_layout.addWidget(QLabel("Host:"), 1, 0)
+        credential_layout.addWidget(self.host, 1, 1)
+        credential_layout.addWidget(QLabel("User:"), 2, 0)
+        credential_layout.addWidget(self.user, 2, 1)
+        credential_layout.addWidget(QLabel("Password:"), 3, 0)
+        credential_layout.addWidget(self.password, 3, 1)
+        credential_layout.addWidget(self.connect, 4, 0, 1, 2)
 
         layout = QHBoxLayout()
         layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
@@ -72,6 +76,15 @@ class SessionManager(QDialog):
 
         self.remove.setEnabled(False)
 
+    @Slot(str)
+    def rename_session(self, text: str):
+        current_name = self.sessions.currentItem().text(0)
+
+        self.sessions.currentItem().setText(0, text)
+
+        self.data[text] = self.data[current_name]
+        del self.data[current_name]
+
     @Slot()
     def show_credentials(self):
         item = self.sessions.currentItem()
@@ -83,11 +96,13 @@ class SessionManager(QDialog):
 
         data = self.data.get(item.text(0))
 
+        self.session.setEnabled(True)
         self.host.setEnabled(True)
         self.user.setEnabled(True)
         self.password.setEnabled(True)
         self.connect.setEnabled(True)
 
+        self.session.setText(item.text(0))
         self.host.setText(data.get("host"))
         self.user.setText(data.get("user"))
 
@@ -95,7 +110,24 @@ class SessionManager(QDialog):
 
     @Slot()
     def new_session(self):
-        session = f"Session - {len(self.sessionList) + 1}"
+        sessions = []
+
+        for session in self.sessionList:
+            split = session.split(' ')[-1]
+
+            if not split.isdigit():
+                continue
+
+            sessions.append(int(split))
+
+        sessions.sort()
+
+        count = 1
+
+        while count in sessions:
+            count += 1
+
+        session = f"Session - {count}"
         self.data[session] = {}
 
         self.sessions.addTopLevelItem(QTreeWidgetItem((session,)))
@@ -118,6 +150,7 @@ class SessionManager(QDialog):
             self.user.setText("")
             self.password.setText("")
 
+            self.session.setEnabled(False)
             self.host.setEnabled(False)
             self.user.setEnabled(False)
             self.password.setEnabled(False)
