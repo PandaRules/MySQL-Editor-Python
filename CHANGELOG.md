@@ -1,3 +1,10 @@
+# Version 1.0.2.1
+
++ Fixed a typo in [README](README.md)
+
+
++ Fixed a bug in [window.py](src/mysql_editor/window.py)
+
 # Version 1.0.2
 
 + Updated [README](README.md)

@@ -253,6 +253,11 @@ class Window(QMainWindow):
     def prepare_table_info(self):
         item = self.databases.currentItem()
 
+        if item is None:
+            self.dropDatabaseButton.setEnabled(False)
+
+            return
+
         if item.parent():
             self.show_table_info(item.parent().text(0), item.text(0))
 
