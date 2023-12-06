@@ -133,7 +133,11 @@ class Window(QMainWindow):
             self.deleted.append(row)
 
         for col in range(self.tableData.columnCount()):
-            self.tableData.cellWidget(row, col).setEnabled(deleted)
+            try:
+                self.tableData.cellWidget(row, col).setEnabled(deleted)
+
+            except AttributeError:
+                self.tableData.item(row, col).setEnabled(deleted)
 
     @Slot()
     def add_query_tab(self):
@@ -350,6 +354,8 @@ class Window(QMainWindow):
 
         if database in ("information_schema", "mysql", "sys", "performance"):
             self.tableData.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            self.tableData.verticalHeader().setToolTip("")
+            self.tableData.verticalHeader().sectionClicked.disconnect(self.update_deleted)
 
         else:
             self.tableData.setEditTriggers(
@@ -357,6 +363,8 @@ class Window(QMainWindow):
                 QAbstractItemView.EditTrigger.EditKeyPressed |
                 QAbstractItemView.EditTrigger.AnyKeyPressed
             )
+            self.tableData.verticalHeader().setToolTip("Click to remove row")
+            self.tableData.verticalHeader().sectionClicked.connect(self.update_deleted)
 
     @Slot()
     def save_edits(self, database, table):
