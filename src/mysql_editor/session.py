@@ -1,5 +1,3 @@
-import traceback
-
 from PySide6.QtCore import Slot, Qt
 from PySide6.QtWidgets import (
     QDialog, QGridLayout, QHBoxLayout, QLabel, QLayout,
