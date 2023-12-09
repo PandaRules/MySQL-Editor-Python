@@ -4,11 +4,12 @@ from configparser import ConfigParser
 
 from PySide6.QtCore import Slot, Qt
 from PySide6.QtWidgets import (
-    QDialog, QGridLayout, QHBoxLayout, QLabel, QLayout,
-    QLineEdit, QMenuBar, QMessageBox, QPushButton, QTreeWidget, QTreeWidgetItem, QStyleFactory, QApplication
+    QDialog, QGridLayout, QHBoxLayout, QLabel, QLayout, QLineEdit, QMenuBar, QMessageBox, QPushButton, QStyleFactory,
+    QApplication, QListWidget, QListWidgetItem
 )
 from mysql.connector import connect
 from mysql.connector.errors import Error
+
 from mysql_editor.window import Window
 
 global connection
@@ -38,11 +39,11 @@ class SessionManager(QDialog):
 
         self.setWindowTitle("Session Manager")
 
-        self.sessions = QTreeWidget()
+        self.sessions = QListWidget()
         self.data = {}
 
         for session in SESSIONS.sections():
-            self.sessions.addTopLevelItem(QTreeWidgetItem((session,)))
+            self.sessions.addItem(QListWidgetItem(session))
 
         self.sessions.setCurrentItem(None)
 
@@ -59,8 +60,6 @@ class SessionManager(QDialog):
         self.password.setEnabled(False)
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
         self.connect.setEnabled(False)
-        self.sessions.setHeaderHidden(True)
-
         self.session.textEdited.connect(self.rename_session)
         self.connect.clicked.connect(self.open_window)
         self.sessions.itemSelectionChanged.connect(self.show_credentials)
@@ -95,8 +94,8 @@ class SessionManager(QDialog):
 
         self.remove.setEnabled(False)
 
-    @Slot(str)
-    def update_theme(self, theme: str):
+    @staticmethod
+    def update_theme(theme: str):
         QApplication.setStyle(theme)
 
         SETTINGS["Settings"] = {"Theme": theme}
@@ -106,9 +105,9 @@ class SessionManager(QDialog):
 
     @Slot(str)
     def rename_session(self, text: str):
-        current_name = self.sessions.currentItem().text(0)
+        current_name = self.sessions.currentItem().text()
 
-        self.sessions.currentItem().setText(0, text)
+        self.sessions.currentItem().setText(text)
 
         SESSIONS[text] = SESSIONS[current_name]
         SESSIONS.remove_section(current_name)
@@ -122,7 +121,7 @@ class SessionManager(QDialog):
 
             return
 
-        data = SESSIONS[item.text(0)]
+        data = SESSIONS[item.text()]
 
         self.session.setEnabled(True)
         self.host.setEnabled(True)
@@ -130,7 +129,7 @@ class SessionManager(QDialog):
         self.password.setEnabled(True)
         self.connect.setEnabled(True)
 
-        self.session.setText(item.text(0))
+        self.session.setText(item.text())
         self.host.setText(data.get("host"))
         self.user.setText(data.get("user"))
 
@@ -158,7 +157,7 @@ class SessionManager(QDialog):
         session = f"Session - {count}"
         SESSIONS.add_section(session)
 
-        self.sessions.addTopLevelItem(QTreeWidgetItem((session,)))
+        self.sessions.addItem(QListWidgetItem(session))
 
     @Slot()
     def remove_session(self):
@@ -169,9 +168,9 @@ class SessionManager(QDialog):
 
             return
 
-        session_name = item.text(0)
+        session_name = item.text()
         self.sessions.setCurrentItem(None)
-        self.sessions.takeTopLevelItem(self.sessions.indexOfTopLevelItem(item))
+        self.sessions.takeItem(item)
 
         self.session.clear()
         self.host.clear()
