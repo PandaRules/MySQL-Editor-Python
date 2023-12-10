@@ -36,7 +36,8 @@ class Window(QMainWindow):
         add_button.clicked.connect(self.add_query_tab)
 
         self.queryTabs.setCornerWidget(add_button)
-        self.queryTabs.addTab(QueryTab(self.queryTabs), "Query - 1")
+        self.queryTabs.addTab(QueryTab(self.queryTabs), "Tab - 1")
+
         self.queryTabs.setTabsClosable(True)
         self.queryTabs.tabCloseRequested.connect(self.remove_query_tab)
 
@@ -51,11 +52,9 @@ class Window(QMainWindow):
         self.tableStructure.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         self.tableData.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
-        drop_table = QPushButton("Drop Table")
-        drop_table.clicked.connect(self.drop_table)
-
-        add_database = QPushButton("Add Database")
-        add_database.clicked.connect(lambda: AddDatabaseWindow(self.Cursor, self.databases).exec())
+        self.dropTableButton = QPushButton("Drop Table")
+        self.dropTableButton.setEnabled(False)
+        self.dropTableButton.clicked.connect(self.drop_table)
 
         self.dropDatabaseButton = QPushButton("Drop Database")
         self.dropDatabaseButton.clicked.connect(self.drop_database)
@@ -64,7 +63,7 @@ class Window(QMainWindow):
         self.tableDetails = QTabWidget()
         self.tableDetails.addTab(self.tableStructure, "Structure")
         self.tableDetails.addTab(self.tableData, "Data")
-        self.tableDetails.setCornerWidget(drop_table)
+        self.tableDetails.setCornerWidget(self.dropTableButton)
 
         self.fileMenu = self.menuBar().addMenu("File")
         self.fileMenu.addAction("Open File", self.queryTabs.currentWidget().open_file, Qt.Modifier.CTRL | Qt.Key.Key_O)
@@ -93,7 +92,6 @@ class Window(QMainWindow):
 
         database_details = QHBoxLayout()
         database_details.addWidget(self.database)
-        database_details.addWidget(add_database)
         database_details.addWidget(self.dropDatabaseButton)
 
         database_widget = QWidget()
@@ -141,13 +139,18 @@ class Window(QMainWindow):
 
     @Slot()
     def add_query_tab(self):
+        tabs = sorted(
+            int(split[-1]) for split in
+            (self.queryTabs.tabText(num).replace('&', '').split(" ") for num in range(self.queryTabs.count()))
+            if "".join(split[:2]) == "Tab-" and split[-1].isdigit()
+        )
+
         count = 1
 
-        for i in range(self.queryTabs.count()):
-            if self.queryTabs.widget(i).file is None:
-                count += 1
+        while count in tabs:
+            count += 1
 
-        self.queryTabs.addTab(QueryTab(self.queryTabs), f"Query - {count}")
+        self.queryTabs.addTab(QueryTab(self.queryTabs), f"Tab - {count}")
 
     @Slot(int)
     def remove_query_tab(self, index):
@@ -212,20 +215,25 @@ class Window(QMainWindow):
 
             return
 
-        QMessageBox.information(self, "Success", "Successfully Dropped!")
+        item = self.databases.currentItem()
 
-        for i in range(self.databases.topLevelItemCount()):
-            if self.databases.topLevelItem(i).text(0) != self.displayedDatabase:
-                continue
+        if item.parent():
+            item = item.parent()
 
-            self.databases.takeTopLevelItem(i)
+        self.databases.blockSignals(True)
 
-            break
+        self.databases.takeTopLevelItem(self.databases.indexOfTopLevelItem(item))
+
+        self.databases.setCurrentItem(None)
+
+        self.databases.blockSignals(False)
 
         self.tableData.setRowCount(0)
         self.tableData.setColumnCount(0)
         self.tableStructure.setRowCount(0)
         self.tableStructure.setColumnCount(0)
+
+        QMessageBox.information(self, "Success", "Successfully Dropped!")
 
     def gen_database_list(self):
         self.Cursor.execute("SHOW DATABASES;")
@@ -238,6 +246,8 @@ class Window(QMainWindow):
 
             for table in self.Cursor.fetchall():
                 database.addChild(QTreeWidgetItem(table))
+
+        self.databases.addTopLevelItem(QTreeWidgetItem(("Add new Database",)))
 
     @Slot()
     def change_modes(self, sizes):
@@ -264,6 +274,15 @@ class Window(QMainWindow):
 
         if item.parent():
             self.show_table_info(item.parent().text(0), item.text(0))
+
+            item = item.parent()
+
+        if self.databases.indexOfTopLevelItem(item) == self.databases.topLevelItemCount() - 1:
+            self.dropDatabaseButton.setEnabled(False)
+
+            AddDatabaseWindow(self.Cursor, self.databases).exec()
+
+            self.databases.setCurrentItem(None)
 
             return
 
@@ -356,6 +375,7 @@ class Window(QMainWindow):
             self.tableData.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
             self.tableData.verticalHeader().setToolTip("")
             self.tableData.verticalHeader().sectionClicked.disconnect(self.update_deleted)
+            self.dropTableButton.setEnabled(False)
 
         else:
             self.tableData.setEditTriggers(
@@ -365,6 +385,7 @@ class Window(QMainWindow):
             )
             self.tableData.verticalHeader().setToolTip("Click to remove row")
             self.tableData.verticalHeader().sectionClicked.connect(self.update_deleted)
+            self.dropTableButton.setEnabled(True)
 
     @Slot()
     def save_edits(self, database, table):
@@ -557,6 +578,7 @@ class Window(QMainWindow):
         self.gen_database_list()
         self.queryTabs.currentWidget().results.hide()
         self.dropDatabaseButton.setEnabled(False)
+        self.dropTableButton.setEnabled(False)
 
         self.tableActions[0].setEnabled(False)
         self.tableActions[1].setEnabled(False)

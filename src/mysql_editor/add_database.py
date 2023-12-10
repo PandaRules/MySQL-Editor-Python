@@ -33,6 +33,10 @@ class AddDatabaseWindow(QDialog):
 
             return
 
-        self.databases.addTopLevelItem(QTreeWidgetItem((database,)))
+        self.databases.blockSignals(True)
+
+        self.databases.insertTopLevelItem(self.databases.topLevelItemCount() - 1, QTreeWidgetItem((database,)))
+
+        self.databases.blockSignals(False)
 
         QMessageBox.information(self, "Success", "Successfully Created")
