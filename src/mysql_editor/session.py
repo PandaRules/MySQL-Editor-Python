@@ -1,8 +1,7 @@
 import os.path
 import sys
-from configparser import ConfigParser
 
-from PySide6.QtCore import Slot, Qt
+from PySide6.QtCore import Slot, Qt, QSettings
 from PySide6.QtWidgets import (
     QDialog, QGridLayout, QHBoxLayout, QLabel, QLayout, QLineEdit, QMenuBar, QMessageBox, QPushButton, QStyleFactory,
     QApplication, QListWidget, QListWidgetItem
@@ -23,14 +22,11 @@ elif sys.platform == "win32":
 else:
     CONFIG_PATH = ""
 
-SETTINGS = ConfigParser()
-SESSIONS = ConfigParser()
-
 CONFIG_FILE = os.path.join(CONFIG_PATH, "config.ini")
 SESSION_FILE = os.path.join(CONFIG_PATH, "sessions.ini")
 
-SETTINGS.read(CONFIG_FILE)
-SESSIONS.read(SESSION_FILE)
+SETTINGS = QSettings(CONFIG_FILE, QSettings.Format.IniFormat)
+SESSIONS = QSettings(SESSION_FILE, QSettings.Format.IniFormat)
 
 
 class SessionManager(QDialog):
@@ -42,8 +38,8 @@ class SessionManager(QDialog):
         self.sessions = QListWidget()
         self.data = {}
 
-        for session in SESSIONS.sections():
-            self.sessions.addItem(QListWidgetItem(session))
+        for group in SESSIONS.childGroups():
+            self.sessions.addItem(QListWidgetItem(group))
 
         self.sessions.setCurrentItem(None)
 
@@ -98,10 +94,9 @@ class SessionManager(QDialog):
     def update_theme(theme: str):
         QApplication.setStyle(theme)
 
-        SETTINGS["Settings"] = {"Theme": theme}
-
-        with open(CONFIG_FILE, "w") as file:
-            SETTINGS.write(file)
+        SETTINGS.beginGroup("Settings")
+        SETTINGS.setValue("Theme", theme)
+        SETTINGS.endGroup()
 
     @Slot(str)
     def rename_session(self, text: str):
@@ -109,8 +104,17 @@ class SessionManager(QDialog):
 
         self.sessions.currentItem().setText(text)
 
-        SESSIONS[text] = SESSIONS[current_name]
-        SESSIONS.remove_section(current_name)
+        SESSIONS.beginGroup(current_name)
+        host = SESSIONS.value("host")
+        user = SESSIONS.value("user")
+        SESSIONS.endGroup()
+
+        SESSIONS.beginGroup(text)
+        SESSIONS.setValue("host", host)
+        SESSIONS.setValue("user", user)
+        SESSIONS.endGroup()
+
+        SESSIONS.remove(current_name)
 
     @Slot()
     def show_credentials(self):
@@ -121,8 +125,6 @@ class SessionManager(QDialog):
 
             return
 
-        data = SESSIONS[item.text()]
-
         self.session.setEnabled(True)
         self.host.setEnabled(True)
         self.user.setEnabled(True)
@@ -130,15 +132,18 @@ class SessionManager(QDialog):
         self.connect.setEnabled(True)
 
         self.session.setText(item.text())
-        self.host.setText(data.get("host"))
-        self.user.setText(data.get("user"))
+
+        SESSIONS.beginGroup(item.text())
+        self.host.setText(SESSIONS.value("host"))
+        self.user.setText(SESSIONS.value("user"))
+        SESSIONS.endGroup()
 
         self.remove.setEnabled(True)
 
     @Slot()
     def new_session(self):
         sessions = sorted(
-            int(split[-1]) for split in (session.split(' ') for session in SESSIONS.sections()) if
+            int(split[-1]) for split in (session.split(' ') for session in SESSIONS.childGroups()) if
             "".join(split[:2]) == "Session-" and split[-1].isdigit()
         )
 
@@ -148,7 +153,9 @@ class SessionManager(QDialog):
             count += 1
 
         session = f"Session - {count}"
-        SESSIONS.add_section(session)
+
+        SESSIONS.beginGroup(session)
+        SESSIONS.endGroup()
 
         self.sessions.addItem(QListWidgetItem(session))
 
@@ -176,10 +183,7 @@ class SessionManager(QDialog):
         self.password.setEnabled(False)
         self.connect.setEnabled(False)
 
-        SESSIONS.remove_section(session_name)
-
-        with open(SESSION_FILE, "w") as file:
-            SESSIONS.write(file)
+        SESSIONS.remove(session_name)
 
         self.remove.setEnabled(False)
 
@@ -201,10 +205,10 @@ class SessionManager(QDialog):
 
         connection.autocommit = True
 
-        SESSIONS[self.session.text()] = {"host": host, "user": user}
-
-        with open(SESSION_FILE, "w") as credentials:
-            SESSIONS.write(credentials)
+        SESSIONS.beginGroup(self.session.text())
+        SESSIONS.setValue("host", host)
+        SESSIONS.setValue("user", user)
+        SESSIONS.endGroup()
 
         self.close()
 
