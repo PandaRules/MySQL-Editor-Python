@@ -137,17 +137,10 @@ class SessionManager(QDialog):
 
     @Slot()
     def new_session(self):
-        sessions = []
-
-        for session in SESSIONS.sections():
-            split = session.split(' ')[-1]
-
-            if not split.isdigit():
-                continue
-
-            sessions.append(int(split))
-
-        sessions.sort()
+        sessions = sorted(
+            int(split[-1]) for split in (session.split(' ') for session in SESSIONS.sections()) if
+            "".join(split[:2]) == "Session-" and split[-1].isdigit()
+        )
 
         count = 1
 
@@ -169,8 +162,8 @@ class SessionManager(QDialog):
             return
 
         session_name = item.text()
+        self.sessions.takeItem(self.sessions.currentRow())
         self.sessions.setCurrentItem(None)
-        self.sessions.takeItem(item)
 
         self.session.clear()
         self.host.clear()
