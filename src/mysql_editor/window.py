@@ -10,6 +10,7 @@ from mysql.connector.cursor import MySQLCursor
 
 from mysql_editor.add_database import AddDatabaseWindow
 from mysql_editor.query import QueryTab
+from typing import List
 
 
 class Window(QMainWindow):
@@ -30,7 +31,7 @@ class Window(QMainWindow):
         self.tableData = QTableWidget()
         self.displayedTable: str = ''
         self.displayedDatabase: str = ''
-        self.deleted: list[int] = []
+        self.deleted: List[int] = []
 
         add_button = QPushButton("+")
         add_button.clicked.connect(self.add_query_tab)
@@ -503,7 +504,7 @@ class Window(QMainWindow):
         if not queries.strip():
             return
 
-        query_list: list[str] = queries.split(';')
+        query_list: List[str] = queries.split(';')
 
         tab: QueryTab = self.queryTabs.currentWidget()
 
