@@ -233,6 +233,9 @@ class Window(QMainWindow):
         self.tableStructure.setRowCount(0)
         self.tableStructure.setColumnCount(0)
 
+        self.database.setText("Current Database:")
+        self.table.setText("Current Text:")
+
         QMessageBox.information(self, "Success", "Successfully Dropped!")
 
     def gen_database_list(self):
