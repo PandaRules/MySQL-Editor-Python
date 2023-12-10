@@ -1,3 +1,8 @@
+# Version 1.0.4
+
++ Lowered minimum requirements
+  + As a result, Python 3.7 and above are now supported!
+
 # Version 1.0.3
 
 + Bug fixes
