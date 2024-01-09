@@ -1,16 +1,19 @@
+from typing import List, Union, Iterable
+
 import mysql.connector.errors
-from PySide6.QtCore import Slot, Qt, QDate
+from PySide6.QtCore import Slot, Qt, QDate, QKeyCombination, QDateTime, QPoint
 from PySide6.QtWidgets import (
     QHeaderView, QLabel, QMainWindow, QMessageBox, QPushButton, QSplitter, QTableWidget,
     QTableWidgetItem, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QComboBox, QDateEdit,
-    QAbstractItemView, QHBoxLayout
+    QAbstractItemView, QDateTimeEdit, QMenu
 )
 from mysql.connector import MySQLConnection
 from mysql.connector.cursor import MySQLCursor
 
 from mysql_editor.add_database import AddDatabaseWindow
 from mysql_editor.query import QueryTab
-from typing import List
+from mysql_editor.table_data_view import TableDataView
+from mysql_editor.table_structure_view import TableStructureView
 
 
 class Window(QMainWindow):
@@ -25,121 +28,116 @@ class Window(QMainWindow):
 
         self.queryTabs = QTabWidget()
         self.database = QLabel("Current Database:")
-        self.databases = QTreeWidget()
+        self.databaseTree = QTreeWidget()
         self.table = QLabel("Current Table:")
-        self.tableStructure = QTableWidget()
-        self.tableData = QTableWidget()
+        self.tableStructure = TableStructureView()
+        self.tableData = TableDataView()
         self.displayedTable: str = ''
         self.displayedDatabase: str = ''
-        self.deleted: List[int] = []
 
-        add_button = QPushButton("+")
-        add_button.clicked.connect(self.add_query_tab)
+        addButton = QPushButton("+")
+        addButton.clicked.connect(self.addQueryTab)
 
-        self.queryTabs.setCornerWidget(add_button)
+        self.queryTabs.setCornerWidget(addButton)
         self.queryTabs.addTab(QueryTab(self.queryTabs), "Tab - 1")
 
         self.queryTabs.setTabsClosable(True)
-        self.queryTabs.tabCloseRequested.connect(self.remove_query_tab)
+        self.queryTabs.tabCloseRequested.connect(self.removeQueryTab)
 
-        self.gen_database_list()
+        self.genDatabaseList()
 
-        self.databases.setHeaderHidden(True)
-        self.databases.itemSelectionChanged.connect(self.prepare_table_info)
+        self.databaseTree.setHeaderHidden(True)
+        self.databaseTree.itemSelectionChanged.connect(self.prepareTableInfo)
+        self.databaseTree.itemChanged.connect(self.itemEdited)
 
-        self.tableData.verticalHeader().setToolTip("Click to remove row")
-        self.tableData.verticalHeader().sectionClicked.connect(self.update_deleted)
-
-        self.tableStructure.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-        self.tableData.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
-
-        self.dropTableButton = QPushButton("Drop Table")
-        self.dropTableButton.setEnabled(False)
-        self.dropTableButton.clicked.connect(self.drop_table)
-
-        self.dropDatabaseButton = QPushButton("Drop Database")
-        self.dropDatabaseButton.clicked.connect(self.drop_database)
-        self.dropDatabaseButton.setEnabled(False)
+        self.databaseTree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.databaseTree.customContextMenuRequested.connect(self.prepareMenu)
 
         self.tableDetails = QTabWidget()
         self.tableDetails.addTab(self.tableStructure, "Structure")
         self.tableDetails.addTab(self.tableData, "Data")
-        self.tableDetails.setCornerWidget(self.dropTableButton)
 
         self.fileMenu = self.menuBar().addMenu("File")
-        self.fileMenu.addAction("Open File", self.queryTabs.currentWidget().open_file, Qt.Modifier.CTRL | Qt.Key.Key_O)
-        self.fileMenu.addAction("Save File", self.queryTabs.currentWidget().save_file, Qt.Modifier.CTRL | Qt.Key.Key_S)
-        self.fileMenu.addAction("Save File As", self.queryTabs.currentWidget().save_file_as,
-                                Qt.Modifier.CTRL | Qt.Modifier.SHIFT | Qt.Key.Key_S)
+        self.fileMenu.addAction("Open File", self.queryTabs.currentWidget().openFile,
+                                QKeyCombination(Qt.Modifier.CTRL, Qt.Key.Key_O))
+        self.fileMenu.addAction("Save File", self.queryTabs.currentWidget().saveFile,
+                                QKeyCombination(Qt.Modifier.CTRL, Qt.Key.Key_S))
+        self.fileMenu.addAction("Save File As", self.queryTabs.currentWidget().saveFileAs,
+                                QKeyCombination(Qt.Modifier.CTRL | Qt.Modifier.SHIFT, Qt.Key.Key_S))
 
         self.executeAction = self.menuBar().addAction(
-            "Execute Query", Qt.Modifier.SHIFT | Qt.Key.Key_F10,
-            lambda: self.execute_query(self.queryTabs.currentWidget().queryBox.toPlainText().replace('\n', ' '))
+            "Execute Query", QKeyCombination(Qt.Modifier.SHIFT, Qt.Key.Key_F10),
+            lambda: self.executeQueries(self.queryTabs.currentWidget().queryBox.toPlainText().replace('\n', ' '))
         )
 
         self.refreshAction = self.menuBar().addAction("Refresh", Qt.Key.Key_F5, self.refresh)
 
-        table_menu = self.menuBar().addMenu("Table")
-        table_menu.addAction("Add New Entry", lambda: self.tableData.setRowCount(self.tableData.rowCount() + 1))
-        table_menu.addAction("Save Changes", lambda: self.save_edits(self.displayedDatabase, self.displayedTable))
-        table_menu.addAction("Cancel Changes",
-                             lambda: self.show_table_info(self.displayedDatabase, self.displayedTable))
+        tableMenu = self.menuBar().addMenu("Table")
+        tableMenu.addAction("Add New Entry", lambda: self.tableData.setRowCount(self.tableData.rowCount() + 1))
+        tableMenu.addAction("Save Changes", lambda: self.saveEdits(self.displayedDatabase, self.displayedTable))
+        tableMenu.addAction("Cancel Changes", lambda: self.showTableInfo(self.displayedDatabase, self.displayedTable))
 
-        self.tableActions = table_menu.actions()
+        self.tableActions = tableMenu.actions()
 
         self.tableActions[0].setEnabled(False)
         self.tableActions[1].setEnabled(False)
         self.tableActions[2].setEnabled(False)
 
-        database_details = QHBoxLayout()
-        database_details.addWidget(self.database)
-        database_details.addWidget(self.dropDatabaseButton)
+        databaseWidget = QWidget()
+        databaseLayout = QVBoxLayout()
+        databaseLayout.addWidget(self.database)
+        databaseLayout.addWidget(self.databaseTree)
+        databaseWidget.setLayout(databaseLayout)
 
-        database_widget = QWidget()
-        database_layout = QVBoxLayout()
-        database_layout.addLayout(database_details)
-        database_layout.addWidget(self.databases)
-        database_widget.setLayout(database_layout)
-
-        table_widget = QWidget()
-        table_layout = QVBoxLayout()
-        table_layout.addWidget(self.table)
-        table_layout.addWidget(self.tableDetails)
-        table_widget.setLayout(table_layout)
+        tableWidget = QWidget()
+        tableLayout = QVBoxLayout()
+        tableLayout.addWidget(self.table)
+        tableLayout.addWidget(self.tableDetails)
+        tableWidget.setLayout(tableLayout)
 
         self.databaseSplitter = QSplitter()
-        self.databaseSplitter.addWidget(database_widget)
-        self.databaseSplitter.addWidget(table_widget)
+        self.databaseSplitter.addWidget(databaseWidget)
+        self.databaseSplitter.addWidget(tableWidget)
         self.databaseSplitter.setOrientation(Qt.Orientation.Vertical)
 
         splitter = QSplitter()
         splitter.addWidget(self.databaseSplitter)
         splitter.addWidget(self.queryTabs)
-        splitter.splitterMoved.connect(lambda: self.change_modes(splitter.sizes()))
+        splitter.splitterMoved.connect(lambda: self.changeModes(splitter.sizes()))
 
         layout = QVBoxLayout()
         layout.addWidget(splitter)
         self.centralWidget().setLayout(layout)
 
-    @Slot(int)
-    def update_deleted(self, row):
-        deleted = row in self.deleted
+    @Slot()
+    def prepareMenu(self, pos: QPoint):
+        item: QTreeWidgetItem = self.databaseTree.itemAt(pos)
 
-        if row in self.deleted:
-            self.deleted.remove(row)
+        menu = QMenu()
+
+        if item is None:
+            menu.addAction("Add Database", lambda: AddDatabaseWindow(self.Cursor, self.databaseTree).exec())
+
+        elif not item.parent():
+            database: str = item.text(0)
+
+            if database in ("information_schema", "mysql", "sys", "performance"):
+                return
+
+            menu.addAction("Drop Database", lambda: self.dropDatabase(database))
 
         else:
-            self.deleted.append(row)
+            database: str = item.parent().text(0)
 
-        for col in range(self.tableData.columnCount()):
-            try:
-                self.tableData.cellWidget(row, col).setEnabled(deleted)
+            if database in ("information_schema", "mysql", "sys", "performance"):
+                return
 
-            except AttributeError:
-                self.tableData.item(row, col).setEnabled(deleted)
+            menu.addAction("Drop Table", lambda: self.dropTable(item.text(0), database))
+
+        menu.exec(pos)
 
     @Slot()
-    def add_query_tab(self):
+    def addQueryTab(self):
         tabs = sorted(
             int(split[-1]) for split in
             (self.queryTabs.tabText(num).replace('&', '').split(" ") for num in range(self.queryTabs.count()))
@@ -154,21 +152,21 @@ class Window(QMainWindow):
         self.queryTabs.addTab(QueryTab(self.queryTabs), f"Tab - {count}")
 
     @Slot(int)
-    def remove_query_tab(self, index):
+    def removeQueryTab(self, index):
         if self.queryTabs.count() != 1:
             self.queryTabs.removeTab(index)
 
     @Slot()
-    def drop_table(self):
+    def dropTable(self, table: str, database: str):
         if QMessageBox.question(
                 self, "Confirmation",
-                f"Are you sure you want to delete {self.displayedTable} from {self.displayedDatabase}?",
+                f"Are you sure you want to delete {table} from {database}?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         ) != QMessageBox.StandardButton.Yes:
             return
 
         try:
-            self.Cursor.execute(f"DROP TABLE `{self.displayedDatabase}`.`{self.displayedTable}`;")
+            self.Cursor.execute(f"DROP TABLE `{database}`.`{table}`;")
 
         except mysql.connector.errors.Error as e:
             QMessageBox.critical(self, "Error", e.msg)
@@ -182,15 +180,15 @@ class Window(QMainWindow):
         self.tableData.setRowCount(0)
         self.tableData.setColumnCount(0)
 
-        for i in range(self.databases.topLevelItemCount()):
-            if self.databases.topLevelItem(i).text(0) != self.displayedDatabase:
+        for i in range(self.databaseTree.topLevelItemCount()):
+            if self.databaseTree.topLevelItem(i).text(0) != database:
                 continue
 
-            for j in range(self.databases.topLevelItem(i).childCount()):
-                if self.databases.topLevelItem(i).child(j).text(0) != self.displayedTable:
+            for j in range(self.databaseTree.topLevelItem(i).childCount()):
+                if self.databaseTree.topLevelItem(i).child(j).text(0) != table:
                     continue
 
-                self.databases.topLevelItem(i).takeChild(j)
+                self.databaseTree.topLevelItem(i).takeChild(j)
 
                 break
 
@@ -199,35 +197,38 @@ class Window(QMainWindow):
 
             break
 
+        self.table.setText(f"Current Table: ")
+        self.displayedTable = ""
+
     @Slot()
-    def drop_database(self):
+    def dropDatabase(self, database: str):
         if QMessageBox.question(
                 self, "Confirmation",
-                f"Are you sure you want to delete {self.displayedDatabase}?",
+                f"Are you sure you want to delete {database}?",
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         ) != QMessageBox.StandardButton.Yes:
             return
 
         try:
-            self.Cursor.execute(f"DROP DATABASE `{self.displayedDatabase}`;")
+            self.Cursor.execute(f"DROP DATABASE `{database}`;")
 
         except mysql.connector.errors.Error as e:
             QMessageBox.critical(self, "Error", e.msg)
 
             return
 
-        item = self.databases.currentItem()
+        item = self.databaseTree.currentItem()
 
         if item.parent():
             item = item.parent()
 
-        self.databases.blockSignals(True)
+        self.databaseTree.blockSignals(True)
 
-        self.databases.takeTopLevelItem(self.databases.indexOfTopLevelItem(item))
+        self.databaseTree.takeTopLevelItem(self.databaseTree.indexOfTopLevelItem(item))
 
-        self.databases.setCurrentItem(None)
+        self.databaseTree.setCurrentItem(None)
 
-        self.databases.blockSignals(False)
+        self.databaseTree.blockSignals(False)
 
         self.tableData.setRowCount(0)
         self.tableData.setColumnCount(0)
@@ -239,56 +240,83 @@ class Window(QMainWindow):
 
         QMessageBox.information(self, "Success", "Successfully Dropped!")
 
-    def gen_database_list(self):
+    def genDatabaseList(self):
         self.Cursor.execute("SHOW DATABASES;")
 
-        for row in self.Cursor.fetchall():
-            database = QTreeWidgetItem(row)
-            self.databases.addTopLevelItem(database)
+        for database in self.Cursor.fetchall():
+            databaseItem = QTreeWidgetItem(database)
+            self.databaseTree.addTopLevelItem(databaseItem)
 
-            self.Cursor.execute(f"SHOW TABLES FROM `{row[0]}`")
+            self.Cursor.execute(f"SHOW TABLES FROM `{database[0]}`")
 
-            for table in self.Cursor.fetchall():
-                database.addChild(QTreeWidgetItem(table))
+            if database[0] in ("information_schema", "mysql", "sys", "performance"):
+                for table in self.Cursor.fetchall():
+                    databaseItem.addChild(QTreeWidgetItem(table))
 
-        self.databases.addTopLevelItem(QTreeWidgetItem(("Add new Database",)))
+            else:
+                for table in self.Cursor.fetchall():
+                    tableItem = QTreeWidgetItem(table)
+                    tableItem.setFlags(tableItem.flags() | Qt.ItemFlag.ItemIsEditable)
+
+                    databaseItem.addChild(tableItem)
+
+    @Slot(QTreeWidgetItem)
+    def itemEdited(self, item: QTreeWidgetItem):
+        if not item.parent():
+            return
+
+        database: str = item.parent().text(0)
+
+        self.Cursor.execute(f"SHOW TABLES FROM {database};")
+        existing: list[str] = [tuple_[0] for tuple_ in self.Cursor.fetchall()]
+
+        for index in range(item.childCount()):
+            text: str = item.child(index).text(0)
+
+            if text not in existing:
+                continue
+
+            existing.remove(text)
+
+        if not existing:
+            return
+
+        try:
+            self.Cursor.execute(f"RENAME TABLE `{database}`.`{existing[0]}` TO `{database}`.`{item.text(0)}`;")
+
+        except mysql.connector.errors.Error as e:
+            QMessageBox.critical(self, "Error renaming table", e.msg)
+
+            return
+
+        self.table.setText(f"Current Table: `{item.text(0)}` From `{database}`")
+        self.displayedTable = item.text(0)
 
     @Slot()
-    def change_modes(self, sizes):
-        query_box_size = sizes[1]
+    def changeModes(self, sizes):
+        queryBoxSize = sizes[1]
 
-        self.fileMenu.setEnabled(query_box_size)
-        self.executeAction.setEnabled(query_box_size)
+        self.fileMenu.setEnabled(queryBoxSize)
+        self.executeAction.setEnabled(queryBoxSize)
         self.refreshAction.setEnabled(sizes[0])
 
-        if not query_box_size:
-            self.databaseSplitter.setOrientation(Qt.Orientation.Horizontal)
-
-        else:
+        if queryBoxSize:
             self.databaseSplitter.setOrientation(Qt.Orientation.Vertical)
 
+        else:
+            self.databaseSplitter.setOrientation(Qt.Orientation.Horizontal)
+
     @Slot()
-    def prepare_table_info(self):
-        item = self.databases.currentItem()
+    def prepareTableInfo(self):
+        item = self.databaseTree.currentItem()
 
         if item is None:
-            self.dropDatabaseButton.setEnabled(False)
-
             return
 
         if item.parent():
-            self.show_table_info(item.parent().text(0), item.text(0))
+            self.showTableInfo(item.parent().text(0), item.text(0))
 
             item = item.parent()
-
-        if self.databases.indexOfTopLevelItem(item) == self.databases.topLevelItemCount() - 1:
-            self.dropDatabaseButton.setEnabled(False)
-
-            AddDatabaseWindow(self.Cursor, self.databases).exec()
-
-            self.databases.setCurrentItem(None)
-
-            return
 
         self.displayedDatabase = item.text(0)
 
@@ -296,10 +324,8 @@ class Window(QMainWindow):
 
         self.database.setText(f"Current Database: {self.displayedDatabase}")
 
-        self.dropDatabaseButton.setEnabled(True)
-
     @Slot()
-    def show_table_info(self, database, table):
+    def showTableInfo(self, database, table):
         self.displayedTable = table
         self.displayedDatabase = database
 
@@ -308,6 +334,7 @@ class Window(QMainWindow):
         self.Cursor.execute(f"DESC `{database}`.`{table}`;")
         structure = self.Cursor.fetchall()
 
+        self.tableStructure.clear()
         self.tableStructure.setColumnCount(len(structure))
         self.tableStructure.setRowCount(len(self.Cursor.column_names) - 1)
         self.tableStructure.setVerticalHeaderLabels(self.Cursor.column_names[1:])
@@ -344,16 +371,17 @@ class Window(QMainWindow):
                     self.tableData.setCellWidget(row, col, options)
 
                 elif structure[col][1] == "date":
-                    current_date = QDate.fromString(f"{value}", "yyyy-MM-dd")
+                    currentDate = QDate.fromString(f"{value}", "yyyy-MM-dd")
 
                     date = QDateEdit()
                     date.setDisplayFormat("yyyy-MM-dd")
+                    date.setCalendarPopup(True)
 
-                    if current_date < date.minimumDate():
-                        date.setMinimumDate(current_date)
+                    if currentDate < date.minimumDate():
+                        date.setMinimumDate(currentDate)
 
-                    elif current_date > date.maximumDate():
-                        date.setMaximumDate(current_date)
+                    elif currentDate > date.maximumDate():
+                        date.setMaximumDate(currentDate)
 
                     if structure[col][2] != "":
                         default = QDate.fromString(f"{structure[col][2]}", "yyyy-MM-dd")
@@ -364,7 +392,33 @@ class Window(QMainWindow):
                         elif default > date.maximumDate():
                             date.setMaximumDate(default)
 
-                    date.setDate(current_date)
+                    date.setDate(currentDate)
+
+                    self.tableData.setCellWidget(row, col, date)
+
+                elif structure[col][1] == "datetime":
+                    currentDate = QDateTime.fromString(f"{value}", "yyyy-MM-dd hh:mm:ss")
+
+                    date = QDateTimeEdit()
+                    date.setDisplayFormat("yyyy-MM-dd hh:mm:ss")
+                    date.setCalendarPopup(True)
+
+                    if currentDate < date.minimumDate():
+                        date.setMinimumDate(currentDate)
+
+                    elif currentDate > date.maximumDate():
+                        date.setMaximumDate(currentDate)
+
+                    if structure[col][2] != "":
+                        default = QDateTime.fromString(f"{structure[col][2]}", "yyyy-MM-dd hh:mm:ss")
+
+                        if default < date.minimumDate():
+                            date.setMinimumDate(default)
+
+                        elif default > date.maximumDate():
+                            date.setMaximumDate(default)
+
+                    date.setDate(currentDate)
 
                     self.tableData.setCellWidget(row, col, date)
 
@@ -378,8 +432,7 @@ class Window(QMainWindow):
         if database in ("information_schema", "mysql", "sys", "performance"):
             self.tableData.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
             self.tableData.verticalHeader().setToolTip("")
-            self.tableData.verticalHeader().sectionClicked.disconnect(self.update_deleted)
-            self.dropTableButton.setEnabled(False)
+            self.tableData.verticalHeader().sectionClicked.disconnect(self.tableData.updateDeleted)
 
         else:
             self.tableData.setEditTriggers(
@@ -388,41 +441,29 @@ class Window(QMainWindow):
                 QAbstractItemView.EditTrigger.AnyKeyPressed
             )
             self.tableData.verticalHeader().setToolTip("Click to remove row")
-            self.tableData.verticalHeader().sectionClicked.connect(self.update_deleted)
-            self.dropTableButton.setEnabled(True)
+            self.tableData.verticalHeader().sectionClicked.connect(self.tableData.updateDeleted)
 
     @Slot()
-    def save_edits(self, database, table):
-        for col in range(self.tableStructure.columnCount()):
-            if self.tableStructure.cellWidget(2, col).text() not in ("PRI", "UNI"):
-                continue
+    def saveEdits(self, database: str, table: str):
+        unique, uniqueCol = self.tableData.getUnique()
 
-            unique = self.tableStructure.horizontalHeaderItem(col).text()
-            unique_col = col
+        rowCount = 0
 
-            break
-
-        else:
-            unique = self.tableStructure.horizontalHeaderItem(0).text()
-            unique_col = 0
-
-        row_count = 0
-
-        queries = []
-        parameters = []
+        queries: List[str] = []
+        parameters: List[Iterable] = []
 
         self.Cursor.execute(f'SELECT * FROM `{database}`.`{table}`')
 
         for row, tuple_ in enumerate(self.Cursor.fetchall()):
-            unique_value = self.tableData.item(row, unique_col).text()
+            uniqueValue = self.tableData.item(row, uniqueCol).text()
 
-            if row in self.deleted:
+            if row in self.tableData.deleted:
                 queries.append(f"DELETE FROM `{database}`.`{table}` WHERE `{unique}` = %s")
-                parameters.append((unique_value,))
+                parameters.append((uniqueValue,))
 
                 continue
 
-            changed_values = []
+            changedValues: List[str] = []
 
             query = ""
 
@@ -433,58 +474,56 @@ class Window(QMainWindow):
                     value = cell.text()
 
                 else:
-                    cell = self.tableData.cellWidget(row, col)
+                    cell: Union[QComboBox, QDateEdit, QDateTimeEdit] = self.tableData.cellWidget(row, col)
 
                     if isinstance(cell, QComboBox):
                         value = cell.currentText()
 
-                    elif isinstance(cell, QDateEdit):
-                        value = cell.date().toString("yyyy-MM-dd")
+                    elif isinstance(cell, QDateTimeEdit):
+                        value = cell.dateTime().toString("yyyy-MM-dd hh:mm:ss")
 
                     else:
-                        value = cell.text()
+                        value = cell.date().toString("yyyy-MM-dd")
 
                 if value == f"{tuple_[col]}":
                     continue
 
-                changed_values.append(value)
+                changedValues.append(value)
                 query += f"`{self.tableStructure.horizontalHeaderItem(col).text()}` = %s, "
 
             if query:
-                queries.append(
-                    f"UPDATE `{database}`.`{table}` SET {query[:-2]} WHERE `{unique}` = '{unique_value}'"
-                )
-                parameters.append(changed_values)
+                queries.append(f"UPDATE `{database}`.`{table}` SET {query[:-2]} WHERE `{unique}` = '{uniqueValue}'")
+                parameters.append(changedValues)
 
-            row_count += 1
+            rowCount += 1
 
-        for row in range(row_count, self.tableData.rowCount()):
-            query = ""
-            changed_values = []
+        for row in range(rowCount, self.tableData.rowCount()):
+            query: str = ""
+            changedValues: List[str] = []
 
             for col in range(self.tableData.columnCount()):
-                cell = self.tableData.item(row, col)
+                cell: QTableWidgetItem = self.tableData.item(row, col)
 
                 if cell is not None:
                     value = cell.text()
 
                 else:
-                    cell = self.tableData.cellWidget(row, col)
+                    cell: Union[QComboBox, QDateEdit, QDateTimeEdit] = self.tableData.cellWidget(row, col)
 
                     if isinstance(cell, QComboBox):
                         value = cell.currentText()
 
-                    elif isinstance(cell, QDateEdit):
-                        value = cell.date().toString("yyyy-MM-dd")
+                    elif isinstance(cell, QDateTimeEdit):
+                        value = cell.dateTime().toString("yyyy-MM-dd hh:mm:ss")
 
                     else:
-                        value = cell.text()
+                        value = cell.date().toString("yyyy-MM-dd")
 
-                changed_values.append(value)
+                changedValues.append(value)
                 query += "%s, "
 
             queries.append(f"INSERT INTO `{database}`.`{table}` VALUES ({query[:-2]});")
-            parameters.append(changed_values)
+            parameters.append(changedValues)
 
         try:
             for query, parameter in zip(queries, parameters):
@@ -500,89 +539,83 @@ class Window(QMainWindow):
         self.tableData.resizeColumnsToContents()
 
     @Slot()
-    def execute_query(self, queries):
+    def executeQueries(self, queries: str):
         if not queries.strip():
             return
 
-        query_list: List[str] = queries.split(';')
+        queryList: List[str] = queries.split(';')
 
         tab: QueryTab = self.queryTabs.currentWidget()
 
         tab.results.clear()
 
-        try:
-            count = 1
+        count = 1
 
-            query: str
-            for i, query in enumerate(query_list):
-                query = query.strip()
+        for i, query in enumerate(queryList):
+            query: str = query.strip()
 
-                if not query:
-                    continue
+            if not query:
+                continue
 
+            try:
                 self.Cursor.execute(query)
 
-                query_upper = query.upper()
+            except mysql.connector.errors.Error as error:
+                QMessageBox.critical(self, f"Error executing query", f"In query {i + 1}:\n\n{query}\n\n{error.msg}")
 
-                if "USE" in query_upper:
-                    index = 4
+                break
 
-                    while query[index] == " ":
-                        index += 1
+            queryUpper: str = query.upper()
 
-                    if query[index] == "`":
-                        index += 1
+            if "USE" in queryUpper:
+                index = 4
 
-                        self.database.setText(f"Current Database: {query[index:-1]}")
+                while query[index] == " ":
+                    index += 1
 
-                    else:
-                        self.database.setText(f"Current Database: {query[index:]}")
+                if query[index] == "`":
+                    index += 1
 
-                    self.dropDatabaseButton.setEnabled(True)
+                    self.database.setText(f"Current Database: {query[index:-1]}")
 
-                elif any(clause in query_upper for clause in ("SELECT", "SHOW", "EXPLAIN", "DESC", "DESCRIBE")):
-                    data = self.Cursor.fetchall()
-                    table = QTableWidget(len(data), len(self.Cursor.column_names))
-                    table.setHorizontalHeaderLabels(self.Cursor.column_names)
-                    table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+                else:
+                    self.database.setText(f"Current Database: {query[index:]}")
 
-                    for row, datum in enumerate(data):
-                        for col, value in enumerate(datum):
-                            if isinstance(value, bytes):
-                                value = value.decode("utf-8")
+            elif any(clause in queryUpper for clause in ("SELECT", "SHOW", "EXPLAIN", "DESC", "DESCRIBE")):
+                data = self.Cursor.fetchall()
+                table = QTableWidget(len(data), len(self.Cursor.column_names))
+                table.setHorizontalHeaderLabels(self.Cursor.column_names)
+                table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
-                            table.setCellWidget(row, col, QLabel(f'{value}'))
+                for row, datum in enumerate(data):
+                    for col, value in enumerate(datum):
+                        if isinstance(value, bytes):
+                            value = value.decode("utf-8")
 
-                    table.resizeColumnsToContents()
+                        table.setCellWidget(row, col, QLabel(f'{value}'))
 
-                    tab.results.addTab(table, f"Result - {count}")
+                table.resizeColumnsToContents()
 
-                    count += 1
+                tab.results.addTab(table, f"Result - {count}")
 
-                elif any(clause in query_upper for clause in ("ALTER", "CREATE", "DROP", "RENAME")):
-                    self.refresh()
+                count += 1
 
-        except mysql.connector.errors.Error as error:
-            QMessageBox.critical(self, "Error", error.msg)
-
-        else:
-            QMessageBox.information(self, "Success", "Successfully executed!")
+            elif any(clause in queryUpper for clause in ("ALTER", "CREATE", "DROP", "RENAME")):
+                self.refresh()
 
         tab.results.setHidden(not tab.results.count())
 
     @Slot()
     def refresh(self):
         self.database.setText("Current Database:")
-        self.databases.clear()
+        self.databaseTree.clear()
         self.table.setText("Current Table:")
         self.tableStructure.setRowCount(0)
         self.tableStructure.setColumnCount(0)
         self.tableData.setRowCount(0)
         self.tableData.setColumnCount(0)
-        self.gen_database_list()
+        self.genDatabaseList()
         self.queryTabs.currentWidget().results.hide()
-        self.dropDatabaseButton.setEnabled(False)
-        self.dropTableButton.setEnabled(False)
 
         self.tableActions[0].setEnabled(False)
         self.tableActions[1].setEnabled(False)

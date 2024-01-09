@@ -1,3 +1,5 @@
+from typing import Union
+
 from PySide6.QtCore import Slot
 from PySide6.QtWidgets import QTabWidget, QTextEdit, QVBoxLayout, QWidget, QFileDialog
 
@@ -13,9 +15,9 @@ class QueryTab(QWidget):
         self.queryBox = QTextEdit()
         self.results = QTabWidget()
 
-        self.file: File | None = None
+        self.file: Union[File, None] = None
 
-        self.queryBox.textChanged.connect(self.check)
+        self.queryBox.textChanged.connect(self.checkIfEdited)
 
         layout = QVBoxLayout()
         layout.addWidget(self.queryBox)
@@ -25,7 +27,7 @@ class QueryTab(QWidget):
         self.results.hide()
 
     @Slot()
-    def check(self):
+    def checkIfEdited(self):
         if self.file is None:
             return
 
@@ -34,54 +36,53 @@ class QueryTab(QWidget):
         index = self.tabs.currentIndex()
 
         if contents != self.file.contents:
-            self.tabs.setTabText(index, "* " + self.file.name)
+            self.tabs.setTabText(index, f"* {self.file.name}")
 
         elif self.tabs.tabText(index)[:2] == "* ":
             self.tabs.setTabText(index, self.file.name)
 
     @Slot()
-    def open_file(self):
-        file_name = QFileDialog.getOpenFileName(self, "Open File", "", "SQL Query File (*.sql)")[0]
+    def openFile(self):
+        fileName: str = QFileDialog.getOpenFileName(self, "Open File", "", "SQL Query File (*.sql)")[0]
 
-        if not file_name or file_name[-4:] != ".sql":
+        if not fileName or fileName[-4:] != ".sql":
             return
 
         if self.file is None:
             self.file = File()
 
-        self.file.open(file_name, "r+")
+        self.file.open(fileName, "r+")
         self.queryBox.setText(self.file.contents)
 
-        self.tabs.setTabText(self.tabs.currentIndex(), file_name)
+        self.tabs.setTabText(self.tabs.currentIndex(), fileName)
 
     @Slot()
-    def save_file(self):
+    def saveFile(self):
         if self.file is None:
-            file_name = QFileDialog.getSaveFileName(self, "Save File As", "", "SQL Query File (*.sql)")[0]
+            fileName: str = QFileDialog.getSaveFileName(self, "Save File", "", "SQL Query File (*.sql)")[0]
 
-            if not file_name or file_name[-4:] != ".sql":
+            if not fileName or fileName[-4:] != ".sql":
                 return
 
-            if self.file is None:
-                self.file = File()
+            self.file = File()
 
-            self.file.open(file_name, "w+")
+            self.file.open(fileName, "w+")
 
         self.file.save(self.queryBox.toPlainText())
 
         self.tabs.setTabText(self.tabs.currentIndex(), self.file.name)
 
     @Slot()
-    def save_file_as(self):
-        file_name = QFileDialog.getSaveFileName(self, "Save File", "", "SQL Query File (*.sql)")[0]
+    def saveFileAs(self):
+        fileName: str = QFileDialog.getSaveFileName(self, "Save File As", "", "SQL Query File (*.sql)")[0]
 
-        if not file_name or file_name[-4:] != ".sql":
+        if not fileName or fileName[-4:] != ".sql":
             return
 
         if self.file is None:
             self.file = File()
 
-        self.file.open(file_name, "w+")
+        self.file.open(fileName, "w+")
         self.file.save(self.queryBox.toPlainText())
 
-        self.tabs.setTabText(self.tabs.currentIndex(), file_name)
+        self.tabs.setTabText(self.tabs.currentIndex(), fileName)
