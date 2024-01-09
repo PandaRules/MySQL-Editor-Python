@@ -1,7 +1,7 @@
 import os.path
 import sys
 
-from PySide6.QtCore import Slot, Qt, QSettings
+from PySide6.QtCore import Slot, Qt, QSettings, QKeyCombination
 from PySide6.QtWidgets import (
     QDialog, QGridLayout, QHBoxLayout, QLabel, QLayout, QLineEdit, QMenuBar, QMessageBox, QPushButton, QStyleFactory,
     QApplication, QListWidget, QListWidgetItem
@@ -36,49 +36,55 @@ class SessionManager(QDialog):
         self.setWindowTitle("Session Manager")
 
         self.sessions = QListWidget()
+        self.sessionNames = []
+
         self.data = {}
 
         for group in SESSIONS.childGroups():
-            self.sessions.addItem(QListWidgetItem(group))
+            self.sessionNames.append(group)
+
+            item = QListWidgetItem(group)
+            item.setFlags(item.flags() | Qt.ItemFlag.ItemIsEditable)
+
+            self.sessions.addItem(item)
 
         self.sessions.setCurrentItem(None)
 
-        self.session = QLineEdit()
         self.host = QLineEdit()
         self.user = QLineEdit()
         self.password = QLineEdit()
-        self.connect = QPushButton("Connect")
+        self.connectButton = QPushButton("Connect")
 
-        self.session.setEnabled(False)
         self.host.setMaxLength(15)
         self.host.setEnabled(False)
         self.user.setEnabled(False)
         self.password.setEnabled(False)
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.connect.setEnabled(False)
-        self.session.textEdited.connect(self.rename_session)
-        self.connect.clicked.connect(self.open_window)
-        self.sessions.itemSelectionChanged.connect(self.show_credentials)
+        self.connectButton.setEnabled(False)
+        self.connectButton.clicked.connect(self.openWindow)
+        self.sessions.itemSelectionChanged.connect(self.showCredentials)
+        self.sessions.itemDoubleClicked.connect(self.sessions.editItem)
+        self.sessions.itemChanged.connect(self.renameSession)
 
         credential_layout = QGridLayout()
         credential_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        credential_layout.addWidget(self.session, 0, 0, 1, 2)
-        credential_layout.addWidget(QLabel("Host:"), 1, 0)
-        credential_layout.addWidget(self.host, 1, 1)
-        credential_layout.addWidget(QLabel("User:"), 2, 0)
-        credential_layout.addWidget(self.user, 2, 1)
-        credential_layout.addWidget(QLabel("Password:"), 3, 0)
-        credential_layout.addWidget(self.password, 3, 1)
-        credential_layout.addWidget(self.connect, 4, 0, 1, 2)
+        credential_layout.addWidget(QLabel("Host:"), 0, 0)
+        credential_layout.addWidget(self.host, 0, 1)
+        credential_layout.addWidget(QLabel("User:"), 1, 0)
+        credential_layout.addWidget(self.user, 1, 1)
+        credential_layout.addWidget(QLabel("Password:"), 2, 0)
+        credential_layout.addWidget(self.password, 2, 1)
+        credential_layout.addWidget(self.connectButton, 3, 0, 1, 2)
 
         self.menubar = QMenuBar()
-        self.menubar.addAction("New Session", Qt.Modifier.CTRL | Qt.Key.Key_N, self.new_session)
-        self.remove = self.menubar.addAction("Remove Session", Qt.Modifier.CTRL | Qt.Key.Key_R, self.remove_session)
+        self.menubar.addAction("New Session", QKeyCombination(Qt.Modifier.CTRL, Qt.Key.Key_N), self.newSession)
+        self.remove = self.menubar.addAction("Remove Session", QKeyCombination(Qt.Modifier.CTRL, Qt.Key.Key_R),
+                                             self.removeSession)
 
-        theme_menu = self.menubar.addMenu("Themes")
+        themes = self.menubar.addMenu("Theme")
 
         for theme in QStyleFactory.keys():
-            theme_menu.addAction(f"{theme}", lambda theme_=theme: self.update_theme(theme_))
+            themes.addAction(f"{theme}", lambda theme_=theme: self.updateTheme(theme_))
 
         layout = QHBoxLayout()
         layout.setMenuBar(self.menubar)
@@ -91,57 +97,44 @@ class SessionManager(QDialog):
         self.remove.setEnabled(False)
 
     @staticmethod
-    def update_theme(theme: str):
+    def updateTheme(theme: str):
         QApplication.setStyle(theme)
 
         SETTINGS.beginGroup("Settings")
         SETTINGS.setValue("Theme", theme)
         SETTINGS.endGroup()
 
-    @Slot(str)
-    def rename_session(self, text: str):
-        current_name = self.sessions.currentItem().text()
+    @Slot(QListWidgetItem)
+    def renameSession(self, item: QListWidgetItem):
+        old = self.sessionNames[self.sessions.row(item)]
+        new = item.text()
 
-        self.sessions.currentItem().setText(text)
+        if old == new:
+            return
 
-        SESSIONS.beginGroup(current_name)
+        elif new in self.sessionNames:
+            QMessageBox.critical(self, "Session already exists", "A session with that name already exists!")
+
+            item.setText(old)
+
+            return
+
+        SESSIONS.beginGroup(old)
         host = SESSIONS.value("host")
         user = SESSIONS.value("user")
         SESSIONS.endGroup()
 
-        SESSIONS.beginGroup(text)
+        SESSIONS.beginGroup(new)
         SESSIONS.setValue("host", host)
         SESSIONS.setValue("user", user)
         SESSIONS.endGroup()
 
-        SESSIONS.remove(current_name)
+        SESSIONS.remove(old)
+
+        self.sessionNames[self.sessions.row(item)] = new
 
     @Slot()
-    def show_credentials(self):
-        item = self.sessions.currentItem()
-
-        if item is None:
-            self.remove.setEnabled(False)
-
-            return
-
-        self.session.setEnabled(True)
-        self.host.setEnabled(True)
-        self.user.setEnabled(True)
-        self.password.setEnabled(True)
-        self.connect.setEnabled(True)
-
-        self.session.setText(item.text())
-
-        SESSIONS.beginGroup(item.text())
-        self.host.setText(SESSIONS.value("host"))
-        self.user.setText(SESSIONS.value("user"))
-        SESSIONS.endGroup()
-
-        self.remove.setEnabled(True)
-
-    @Slot()
-    def new_session(self):
+    def newSession(self):
         sessions = sorted(
             int(split[-1]) for split in (session.split(' ') for session in SESSIONS.childGroups()) if
             "".join(split[:2]) == "Session-" and split[-1].isdigit()
@@ -155,12 +148,16 @@ class SessionManager(QDialog):
         session = f"Session - {count}"
 
         SESSIONS.beginGroup(session)
+        SESSIONS.setValue("host", "")
+        SESSIONS.setValue("user", "")
         SESSIONS.endGroup()
 
         self.sessions.addItem(QListWidgetItem(session))
 
+        self.sessionNames.append(session)
+
     @Slot()
-    def remove_session(self):
+    def removeSession(self):
         item = self.sessions.currentItem()
 
         if item is None:
@@ -169,26 +166,56 @@ class SessionManager(QDialog):
             return
 
         session_name = item.text()
-        self.sessions.takeItem(self.sessions.currentRow())
+        row = self.sessions.currentRow()
         self.sessions.setCurrentItem(None)
+        self.sessions.takeItem(row)
 
-        self.session.clear()
         self.host.clear()
         self.user.clear()
         self.password.clear()
 
-        self.session.setEnabled(False)
         self.host.setEnabled(False)
         self.user.setEnabled(False)
         self.password.setEnabled(False)
-        self.connect.setEnabled(False)
+        self.connectButton.setEnabled(False)
 
         SESSIONS.remove(session_name)
+        self.sessionNames.remove(session_name)
 
         self.remove.setEnabled(False)
 
     @Slot()
-    def open_window(self):
+    def showCredentials(self):
+        item = self.sessions.currentItem()
+
+        if item is None:
+            self.remove.setEnabled(False)
+
+            self.host.clear()
+            self.user.clear()
+            self.password.clear()
+
+            self.host.setEnabled(True)
+            self.user.setEnabled(True)
+            self.password.setEnabled(True)
+            self.connectButton.setEnabled(True)
+
+            return
+
+        self.host.setEnabled(True)
+        self.user.setEnabled(True)
+        self.password.setEnabled(True)
+        self.connectButton.setEnabled(True)
+
+        SESSIONS.beginGroup(item.text())
+        self.host.setText(SESSIONS.value("host"))
+        self.user.setText(SESSIONS.value("user"))
+        SESSIONS.endGroup()
+
+        self.remove.setEnabled(True)
+
+    @Slot()
+    def openWindow(self):
         global connection
 
         host = self.host.text()
@@ -205,7 +232,7 @@ class SessionManager(QDialog):
 
         connection.autocommit = True
 
-        SESSIONS.beginGroup(self.session.text())
+        SESSIONS.beginGroup(self.sessions.currentItem().text())
         SESSIONS.setValue("host", host)
         SESSIONS.setValue("user", user)
         SESSIONS.endGroup()

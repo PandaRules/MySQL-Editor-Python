@@ -1,4 +1,5 @@
 import mysql.connector.errors
+from PySide6.QtCore import Slot
 from PySide6.QtWidgets import (
     QDialog, QFormLayout, QLabel, QLayout, QLineEdit, QMessageBox, QPushButton, QTreeWidgetItem, QTreeWidget
 )
@@ -6,37 +7,38 @@ from mysql.connector.cursor import MySQLCursor
 
 
 class AddDatabaseWindow(QDialog):
-    def __init__(self, cursor: MySQLCursor, databases: QTreeWidget):
+    def __init__(self, cursor: MySQLCursor, databaseTree: QTreeWidget):
         super().__init__()
 
         self.setWindowTitle("Add database")
 
-        self.Cursor = cursor
-        self.databases = databases
+        self.Cursor: MySQLCursor = cursor
+        self.databaseTree: QTreeWidget = databaseTree
 
-        entry = QLineEdit()
+        self.entry = QLineEdit()
         button = QPushButton("Add")
-        button.clicked.connect(lambda: self.add(entry.text()))
+        button.clicked.connect(self.add)
 
         layout = QFormLayout()
         layout.setSizeConstraint(QLayout.SizeConstraint.SetFixedSize)
-        layout.addRow(QLabel("Database:"), entry)
+        layout.addRow(QLabel("Database:"), self.entry)
         layout.addRow(button)
         self.setLayout(layout)
 
-    def add(self, database):
+    @Slot()
+    def add(self):
+        database: str = self.entry.text()
+
         try:
             self.Cursor.execute(f"CREATE DATABASE `{database}`;")
 
-        except mysql.connector.errors.Error as e:
-            QMessageBox.critical(self, "Error", e.msg)
+        except mysql.connector.errors.Error as error:
+            QMessageBox.critical(self, "Error", error.msg)
 
             return
 
-        self.databases.blockSignals(True)
-
-        self.databases.insertTopLevelItem(self.databases.topLevelItemCount() - 1, QTreeWidgetItem((database,)))
-
-        self.databases.blockSignals(False)
+        self.databaseTree.blockSignals(True)
+        self.databaseTree.addTopLevelItem(QTreeWidgetItem((database,)))
+        self.databaseTree.blockSignals(False)
 
         QMessageBox.information(self, "Success", "Successfully Created")
