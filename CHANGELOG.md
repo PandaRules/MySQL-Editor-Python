@@ -1,7 +1,51 @@
+# Version 2024.01.09.1
+
++ Switched to a new versioning system of `yyyy.mm.dd.version`
+
+## Backend (no change in functionality)
+
++ Switched to QSettings from configparser
+
+
++ [add_database.py](src/mysql_editor/add_database.py)
+    + Renamed variables
+    + Made AddDatabaseWindow.add() a Slot()
+
+
++ [query.py](src/mysql_editor/query.py)
+    + Renamed variables and methods
+    + Edited type annotations
+
+
++ [session.py](src/mysql_editor/session.py)
+    + Renamed variables and methods
+    + Update algorithm for renaming a session
+    + Reordered methods
+
+
++ [window.py](src/mysql_editor/window.py)
+    + Renamed variables and methods
+    + Edited type annotations
+    + Made table structure and table data their own classes in table_structure_view.py and table_data_view.py
+      respectively
+    + Reformatted several parts
+
+## Frontend (functionality changes)
+
++ [session.py](src/mysql_editor/session.py)
+    + Made it possible to rename sessions by double-clicking the entry
+
+
++ [window.py](src/mysql_editor/window.py)
+    + Made it possible to rename tables by double-clicking the entry
+    + Added a menu for added and dropping databases and dropping tables
+    + Consequently removed those respective buttons
+    + Made the table data detect datetime
+
 # Version 1.0.4
 
 + Lowered minimum requirements
-  + As a result, Python 3.7 and above are now supported!
+    + As a result, Python 3.7 and above are now supported!
 
 # Version 1.0.3
 
