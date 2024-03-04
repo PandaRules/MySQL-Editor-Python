@@ -60,6 +60,7 @@ class SessionManager(QDialog):
         self.user.setEnabled(False)
         self.password.setEnabled(False)
         self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password.textChanged.connect(lambda text: self.connectButton.setEnabled(len(text) != 0))
         self.connectButton.setEnabled(False)
         self.connectButton.clicked.connect(self.openWindow)
         self.sessions.itemSelectionChanged.connect(self.showCredentials)
@@ -198,14 +199,13 @@ class SessionManager(QDialog):
             self.host.setEnabled(True)
             self.user.setEnabled(True)
             self.password.setEnabled(True)
-            self.connectButton.setEnabled(True)
 
             return
 
         self.host.setEnabled(True)
         self.user.setEnabled(True)
         self.password.setEnabled(True)
-        self.connectButton.setEnabled(True)
+        self.connectButton.setEnabled(len(self.password.text()) != 0)
 
         SESSIONS.beginGroup(item.text())
         self.host.setText(SESSIONS.value("host"))
