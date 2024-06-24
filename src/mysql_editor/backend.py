@@ -21,20 +21,20 @@ class Backend:
 
         return self.__cursor.fetchall()
 
-    def getTables(self, database: str) -> List[str]:
-        self.__cursor.execute(f"SHOW TABLES FROM `{database}`;")
+    def getTables(self, database: str, tableType: str) -> List[str]:
+        self.__cursor.execute(f"SHOW FULL TABLES IN `{database}` WHERE TABLE_TYPE LIKE '{tableType}';")
 
         return self.__cursor.fetchall()
 
-    def getTableStructure(self, database: str, table: str) -> Tuple[List[Any], List[str]]:
+    def getTableStructure(self, database: str, table: str) -> Tuple[List[Tuple[Any]], List[str]]:
         self.__cursor.execute(f"DESC `{database}`.`{table}`;")
 
         return self.__cursor.fetchall(), self.__cursor.column_names
 
-    def getData(self, database: str, table: str) -> Tuple[List[Any]]:
+    def getData(self, database: str, table: str) -> Tuple[List[Tuple[Any]], List[str]]:
         self.__cursor.execute(f"SELECT * FROM `{database}`.`{table}`;")
 
-        return self.__cursor.fetchall()
+        return self.__cursor.fetchall(), self.__cursor.column_names
 
     def setDatabase(self, database: str) -> None:
         self.__cursor.execute(f"USE `{database}`;")
@@ -75,7 +75,7 @@ class Backend:
 
         return None
 
-    def executeQuery(self, query: str) -> Union[Error, Tuple[List[Any], List[str]]]:
+    def executeQuery(self, query: str) -> Union[Error, Tuple[List[Tuple[Any]], List[str]]]:
         try:
             self.__cursor.execute(query)
 

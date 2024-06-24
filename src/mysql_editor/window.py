@@ -112,9 +112,9 @@ class WindowUI(QMainWindow):
     def prepareMenu(self, pos: QPoint):
         item: QTreeWidgetItem = self.databaseTree.itemAt(pos)
 
-        menu = QMenu()
-
         if item is None:
+            menu = QMenu()
+
             menu.addAction("Add Database", lambda: AddDatabaseWindow(self.databaseTree).exec())
 
         elif not item.parent():
@@ -123,13 +123,20 @@ class WindowUI(QMainWindow):
             if database in ("information_schema", "mysql", "sys", "performance"):
                 return
 
+            menu = QMenu()
+
             menu.addAction("Drop Database", lambda: self.dropDatabase(database))
 
+        elif not item.parent().parent():
+            return
+
         else:
-            database: str = item.parent().text(0)
+            database: str = item.parent().parent().text(0)
 
             if database in ("information_schema", "mysql", "sys", "performance"):
                 return
+
+            menu = QMenu()
 
             menu.addAction("Drop Table", lambda: self.dropTable(item.text(0), database))
 
@@ -219,6 +226,9 @@ class WindowUI(QMainWindow):
         if item.parent():
             item = item.parent()
 
+            if item.parent():
+                item = item.parent()
+
         self.databaseTree.blockSignals(True)
 
         self.databaseTree.takeTopLevelItem(self.databaseTree.indexOfTopLevelItem(item))
@@ -238,27 +248,38 @@ class WindowUI(QMainWindow):
         QMessageBox.information(self, "Success", "Successfully Dropped!")
 
     def genDatabaseList(self):
-        for database in self.__backend.getDatabases():
-            databaseItem = QTreeWidgetItem(database)
-            self.databaseTree.addTopLevelItem(databaseItem)
+        for (database,) in self.__backend.getDatabases():
+            databaseItem = QTreeWidgetItem(self.databaseTree, (database,))
 
-            if database[0] in ("information_schema", "mysql", "sys", "performance"):
-                for table in self.__backend.getTables(database[0]):
-                    databaseItem.addChild(QTreeWidgetItem(table))
+            tablesItem = QTreeWidgetItem(databaseItem, ("Tables",))
+            viewsItem = QTreeWidgetItem(databaseItem, ("Views",))
+
+            if database in ("mysql", "sys", "performance"):
+                for table in self.__backend.getTables(database, "BASE TABLE"):
+                    tablesItem.addChild(QTreeWidgetItem(table))
+
+                for table in self.__backend.getTables(database, "VIEW"):
+                    viewsItem.addChild(QTreeWidgetItem(table))
+
+            if database == "information_schema":
+                for table in self.__backend.getTables(database, "SYSTEM VIEW"):
+                    viewsItem.addChild(QTreeWidgetItem(table))
 
             else:
-                for table in self.__backend.getTables(database[0]):
-                    tableItem = QTreeWidgetItem(table)
+                for table in self.__backend.getTables(database, "BASE TABLE"):
+                    tableItem = QTreeWidgetItem(tablesItem, table)
                     tableItem.setFlags(tableItem.flags() | Qt.ItemFlag.ItemIsEditable)
 
-                    databaseItem.addChild(tableItem)
+                for table in self.__backend.getTables(database, "VIEW"):
+                    tableItem = QTreeWidgetItem(viewsItem, table)
+                    tableItem.setFlags(tableItem.flags() | Qt.ItemFlag.ItemIsEditable)
 
     @Slot(QTreeWidgetItem)
     def itemEdited(self, item: QTreeWidgetItem):
-        if not item.parent():
+        if not item.parent().parent():
             return
 
-        database: str = item.parent().text(0)
+        database: str = item.parent().parent().text(0)
 
         existing: List[str] = self.__backend.getTables(database)
 
@@ -304,12 +325,17 @@ class WindowUI(QMainWindow):
         if item is None:
             return
 
-        if item.parent():
-            self.showTableInfo(item.parent().text(0), item.text(0))
+        if item.parent() is not None:
+            if item.parent().parent() is not None:
+                self.showTableInfo(item.parent().parent().text(0), item.text(0))
 
-            item = item.parent()
+                self.displayedDatabase = item.parent().parent().text(0)
 
-        self.displayedDatabase = item.text(0)
+            else:
+                self.displayedDatabase = item.parent().text(0)
+
+        else:
+            self.displayedDatabase = item.text(0)
 
         self.__backend.setDatabase(self.displayedDatabase)
 
@@ -336,7 +362,7 @@ class WindowUI(QMainWindow):
 
                 self.tableStructure.setCellWidget(col, row, QLabel(value))
 
-        data = self.__backend.getData(database, table)
+        data, columns = self.__backend.getData(database, table)
 
         self.tableData.clear()
         self.tableData.setRowCount(len(data))
