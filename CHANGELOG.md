@@ -1,3 +1,28 @@
+# Version 2024.06.24.1
+
++ Removed support for EOL Python 3.7
+
+## Features
+
++ Added configuration of port in connection screen
+
+## Bug-fixes
+
++ Saving changes through the GUI now works as expected
+
+
++ Trying to refresh no longer triggers rename table function
+
+
++ Can no longer attempt to log in with empty credentials
+
+## Backend (no change in functionality)
+
++ Added Backend class for managing SQL connections
+
+
++ Refactored code
+
 # Version 2024.01.09.1
 
 + Switched to a new versioning system of `yyyy.mm.dd.version`

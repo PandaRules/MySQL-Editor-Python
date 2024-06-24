@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mysql_editor_python"
-version = "2024.01.09.1"
+version = "2024.06.24.1"
 description = "A MySQL Editor"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 dependencies = [
     "pyside6>=6.5.3",
     "mysql-connector-python>=8.0.31"
