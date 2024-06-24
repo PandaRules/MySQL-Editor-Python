@@ -26,12 +26,12 @@ class Backend:
 
         return self.__cursor.fetchall()
 
-    def getTableStructure(self, database: str, table: str) -> Tuple[List[Tuple[Any]], List[str]]:
+    def getTableStructure(self, database: str, table: str) -> Tuple[List[Tuple[Any]], Tuple[str]]:
         self.__cursor.execute(f"DESC `{database}`.`{table}`;")
 
         return self.__cursor.fetchall(), self.__cursor.column_names
 
-    def getData(self, database: str, table: str) -> Tuple[List[Tuple[Any]], List[str]]:
+    def getData(self, database: str, table: str) -> Tuple[List[Tuple[Any]], Tuple[str]]:
         self.__cursor.execute(f"SELECT * FROM `{database}`.`{table}`;")
 
         return self.__cursor.fetchall(), self.__cursor.column_names

@@ -1,14 +1,15 @@
-from typing import Any, Iterable, List, Optional, Tuple, Union
+from typing import Iterable, List, Optional, Union
 
 from PySide6.QtCore import QDate, QDateTime, Slot
-from PySide6.QtWidgets import (QComboBox, QDateEdit, QDateTimeEdit, QHeaderView, QMessageBox, QTableWidget,
-                               QTableWidgetItem)
+from PySide6.QtGui import QAction
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDateEdit, QDateTimeEdit, QHeaderView, QMenuBar,
+                               QMessageBox, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget)
 from mysql.connector.errors import Error
 
 from mysql_editor.backend import Backend
 
 
-class TableDataView(QTableWidget):
+class TableDataView(QWidget):
     def __init__(self):
         self.__backend = Backend()
 
@@ -16,19 +17,43 @@ class TableDataView(QTableWidget):
 
         super().__init__(None)
 
-        self.verticalHeader().setToolTip("Click to remove row")
-        self.verticalHeader().sectionClicked.connect(self.updateDeleted)
+        self.__database: str = ""
+        self.__table: str = ""
 
-        self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        self.__data = QTableWidget(self)
 
-    def setTable(self, data: List[Tuple[Any]], structure: List[Tuple[Any]], columns: List[str]) -> None:
-        self.clear()
-        self.setRowCount(len(data))
-        self.setColumnCount(len(columns))
-        self.setHorizontalHeaderLabels(columns)
+        self.__data.verticalHeader().setToolTip("Click to remove row")
+        self.__data.verticalHeader().sectionClicked.connect(self.updateDeleted)
+
+        self.__data.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+
+        menubar = QMenuBar()
+        menubar.addAction("Add New Entry", lambda: self.__data.setRowCount(self.__data.rowCount() + 1))
+        menubar.addAction("Save Changes", lambda: self.saveEdits(self.__database, self.__table))
+        menubar.addAction("Cancel Changes", lambda: self.setTable(self.__database, self.__table))
+
+        self.__tableActions: List[QAction] = menubar.actions()
+
+        self.setActionsClickable(False)
+
+        layout = QVBoxLayout(self)
+        layout.setMenuBar(menubar)
+        layout.addWidget(self.__data)
+
+    def setTable(self, database: str, table: str) -> None:
+        data, columns = self.__backend.getData(database, table)
+        structure, _ = self.__backend.getTableStructure(database, table)
+
+        self.__database = database
+        self.__table = table
+
+        self.__data.clear()
+        self.__data.setRowCount(len(data))
+        self.__data.setColumnCount(len(columns))
+        self.__data.setHorizontalHeaderLabels(columns)
 
         for row, tuple_ in enumerate(data):
-            self.setRowHidden(row, False)
+            self.__data.setRowHidden(row, False)
 
             for col, value in enumerate(tuple_):
                 if isinstance(value, bytes):
@@ -39,7 +64,7 @@ class TableDataView(QTableWidget):
                     options.addItems(eval(structure[col][1][4:]))
                     options.setCurrentText(f"{value}")
 
-                    self.setCellWidget(row, col, options)
+                    self.__data.setCellWidget(row, col, options)
 
                 elif structure[col][1] == "date":
                     currentDate = QDate.fromString(f"{value}", "yyyy-MM-dd")
@@ -65,7 +90,7 @@ class TableDataView(QTableWidget):
 
                     date.setDate(currentDate)
 
-                    self.setCellWidget(row, col, date)
+                    self.__data.setCellWidget(row, col, date)
 
                 elif structure[col][1] == "datetime":
                     currentDate = QDateTime.fromString(f"{value}", "yyyy-MM-dd hh:mm:ss")
@@ -91,10 +116,34 @@ class TableDataView(QTableWidget):
 
                     date.setDateTime(currentDate)
 
-                    self.setCellWidget(row, col, date)
+                    self.__data.setCellWidget(row, col, date)
 
                 else:
-                    self.setItem(row, col, QTableWidgetItem(f"{value}"))
+                    self.__data.setItem(row, col, QTableWidgetItem(f"{value}"))
+
+        self.setActionsClickable(True)
+
+        if database in ("information_schema", "mysql", "sys", "performance"):
+            self.__data.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+            self.__data.verticalHeader().setToolTip("")
+            self.__data.verticalHeader().sectionClicked.disconnect(self.updateDeleted)
+
+        else:
+            self.__data.setEditTriggers(
+                QAbstractItemView.EditTrigger.DoubleClicked |
+                QAbstractItemView.EditTrigger.EditKeyPressed |
+                QAbstractItemView.EditTrigger.AnyKeyPressed
+            )
+            self.__data.verticalHeader().setToolTip("Click to remove row")
+            self.__data.verticalHeader().sectionClicked.connect(self.updateDeleted)
+
+    def clearData(self) -> None:
+        self.__data.setRowCount(0)
+        self.__data.setColumnCount(0)
+
+    def setActionsClickable(self, clickable: bool) -> None:
+        for action in self.__tableActions:
+            action.setEnabled(clickable)
 
     @Slot(int)
     def updateDeleted(self, row: int):
@@ -106,33 +155,36 @@ class TableDataView(QTableWidget):
         else:
             self.deleted.append(row)
 
-        for col in range(self.columnCount()):
+        for col in range(self.__data.columnCount()):
             try:
-                self.cellWidget(row, col).setEnabled(deleted)
+                self.__data.cellWidget(row, col).setEnabled(deleted)
 
             except AttributeError:
-                self.item(row, col).setEnabled(deleted)
-
-    def getUnique(self) -> Tuple[str, int]:
-        for col in range(self.columnCount()):
-            if self.cellWidget(2, col).text() not in ("PRI", "UNI"):
-                continue
-
-            return self.horizontalHeaderItem(col).text(), col
-
-        return self.horizontalHeaderItem(0).text(), 0
+                self.__data.item(row, col).setEnabled(deleted)
 
     def saveEdits(self, database: str, table: str):
-        unique, uniqueCol = self.getUnique()
-        _, columns = self.__backend.getTableStructure(database, table)
+        structure, _ = self.__backend.getTableStructure(database, table)
+
+        for row, tuple_ in enumerate(structure):
+            if tuple_[3] not in ("PRI", "UNI"):
+                continue
+
+            unique, uniqueCol = tuple_[0], row
+
+            break
+
+        else:
+            unique, uniqueCol = structure[0][0], 0
 
         rowCount = 0
 
         queries: List[str] = []
         parameters: List[Iterable] = []
 
-        for row, tuple_ in enumerate(self.__backend.getData(database, table)):
-            uniqueValue = self.item(row, uniqueCol).text()
+        data, columns = self.__backend.getData(database, table)
+
+        for row, tuple_ in enumerate(data):
+            uniqueValue = self.__data.item(row, uniqueCol).text()
 
             if row in self.deleted:
                 queries.append(f"DELETE FROM `{database}`.`{table}` WHERE `{unique}` = %s")
@@ -142,16 +194,16 @@ class TableDataView(QTableWidget):
 
             changedValues: List[str] = []
 
-            query = ""
+            query: List[str] = []
 
-            for col in range(self.columnCount()):
-                cell = self.item(row, col)
+            for col in range(self.__data.columnCount()):
+                cell = self.__data.item(row, col)
 
                 if cell is not None:
                     value = cell.text()
 
                 else:
-                    cell: Union[QComboBox, QDateEdit, QDateTimeEdit] = self.cellWidget(row, col)
+                    cell: Union[QComboBox, QDateEdit, QDateTimeEdit] = self.__data.cellWidget(row, col)
 
                     if isinstance(cell, QComboBox):
                         value = cell.currentText()
@@ -166,26 +218,27 @@ class TableDataView(QTableWidget):
                     continue
 
                 changedValues.append(value)
-                query += f"`{columns[col]}` = %s, "
+                query.append(f"`{columns[col]}` = %s")
 
             if query:
-                queries.append(f"UPDATE `{database}`.`{table}` SET {query[:-2]} WHERE `{unique}` = '{uniqueValue}'")
+                queries.append(
+                    f"UPDATE `{database}`.`{table}` SET {', '.join(query)} WHERE `{unique}` = '{uniqueValue}'")
                 parameters.append(changedValues)
 
             rowCount += 1
 
-        for row in range(rowCount, self.rowCount()):
+        for row in range(rowCount, self.__data.rowCount()):
             query: str = ""
             changedValues: List[str] = []
 
-            for col in range(self.columnCount()):
-                cell: QTableWidgetItem = self.item(row, col)
+            for col in range(self.__data.columnCount()):
+                cell: QTableWidgetItem = self.__data.item(row, col)
 
                 if cell is not None:
                     value = cell.text()
 
                 else:
-                    cell: Union[QComboBox, QDateEdit, QDateTimeEdit] = self.cellWidget(row, col)
+                    cell: Union[QComboBox, QDateEdit, QDateTimeEdit] = self.__data.cellWidget(row, col)
 
                     if isinstance(cell, QComboBox):
                         value = cell.currentText()
@@ -211,4 +264,4 @@ class TableDataView(QTableWidget):
 
         QMessageBox.information(self, "Success", "Successfully Executed")
 
-        self.resizeColumnsToContents()
+        self.__data.resizeColumnsToContents()

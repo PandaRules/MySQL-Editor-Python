@@ -1,8 +1,8 @@
 from typing import Any, List, Optional, Tuple, Union
 
 from PySide6.QtCore import QKeyCombination, QPoint, Qt, Slot
-from PySide6.QtWidgets import (QAbstractItemView, QHeaderView, QLabel, QMainWindow, QMenu, QMessageBox, QSplitter,
-                               QTabWidget, QTableWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QHeaderView, QLabel, QMainWindow, QMenu, QMessageBox, QSplitter, QTabWidget,
+                               QTableWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 from mysql.connector import MySQLConnection
 from mysql.connector.errors import Error
 
@@ -59,18 +59,6 @@ class WindowUI(QMainWindow):
         )
 
         self.refreshAction = self.menuBar().addAction("Refresh", Qt.Key.Key_F5, self.refresh)
-
-        tableMenu = self.menuBar().addMenu("Table")
-        tableMenu.addAction("Add New Entry", lambda: self.tableData.setRowCount(self.tableData.rowCount() + 1))
-        tableMenu.addAction("Save Changes",
-                            lambda: self.tableData.saveEdits(self.displayedDatabase, self.displayedTable))
-        tableMenu.addAction("Cancel Changes", lambda: self.showTableInfo(self.displayedDatabase, self.displayedTable))
-
-        self.tableActions = tableMenu.actions()
-
-        self.tableActions[0].setEnabled(False)
-        self.tableActions[1].setEnabled(False)
-        self.tableActions[2].setEnabled(False)
 
         databaseWidget = QWidget()
         databaseLayout = QVBoxLayout()
@@ -150,10 +138,8 @@ class WindowUI(QMainWindow):
 
         QMessageBox.information(self, "Success", "Successfully dropped!")
 
-        self.tableStructure.setRowCount(0)
-        self.tableStructure.setColumnCount(0)
-        self.tableData.setRowCount(0)
-        self.tableData.setColumnCount(0)
+        self.tableStructure.clearData()
+        self.tableData.clearData()
 
         for i in range(self.databaseTree.topLevelItemCount()):
             if self.databaseTree.topLevelItem(i).text(0) != database:
@@ -207,10 +193,8 @@ class WindowUI(QMainWindow):
 
         self.databaseTree.blockSignals(False)
 
-        self.tableData.setRowCount(0)
-        self.tableData.setColumnCount(0)
-        self.tableStructure.setRowCount(0)
-        self.tableStructure.setColumnCount(0)
+        self.tableStructure.clearData()
+        self.tableData.clearData()
 
         self.database.setText("Current Database:")
         self.table.setText("Current Text:")
@@ -251,7 +235,8 @@ class WindowUI(QMainWindow):
 
         database: str = item.parent().parent().text(0)
 
-        existing: List[str] = self.__backend.getTables(database)
+        existing: List[str] = self.__backend.getTables(database, "BASE TABLE") + self.__backend.getTables(database,
+                                                                                                          "VIEW")
 
         for index in range(item.childCount()):
             text: str = item.child(index).text(0)
@@ -318,43 +303,8 @@ class WindowUI(QMainWindow):
 
         self.table.setText(f"Current Table: `{table}` From `{database}`")
 
-        structure, columns = self.__backend.getTableStructure(database, table)
-
-        self.tableStructure.clear()
-        self.tableStructure.setColumnCount(len(structure))
-        self.tableStructure.setRowCount(len(columns) - 1)
-        self.tableStructure.setVerticalHeaderLabels(columns[1:])
-
-        for row, tuple_ in enumerate(structure):
-            for col, value in enumerate(tuple_[1:]):
-                if isinstance(value, bytes):
-                    value = value.decode("utf-8")
-
-                self.tableStructure.setCellWidget(col, row, QLabel(value))
-
-        data, columns = self.__backend.getData(database, table)
-
-        self.tableStructure.setHorizontalHeaderLabels(columns)
-
-        self.tableData.setTable(data, structure, columns)
-
-        self.tableActions[0].setEnabled(True)
-        self.tableActions[1].setEnabled(True)
-        self.tableActions[2].setEnabled(True)
-
-        if database in ("information_schema", "mysql", "sys", "performance"):
-            self.tableData.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
-            self.tableData.verticalHeader().setToolTip("")
-            self.tableData.verticalHeader().sectionClicked.disconnect(self.tableData.updateDeleted)
-
-        else:
-            self.tableData.setEditTriggers(
-                QAbstractItemView.EditTrigger.DoubleClicked |
-                QAbstractItemView.EditTrigger.EditKeyPressed |
-                QAbstractItemView.EditTrigger.AnyKeyPressed
-            )
-            self.tableData.verticalHeader().setToolTip("Click to remove row")
-            self.tableData.verticalHeader().sectionClicked.connect(self.tableData.updateDeleted)
+        self.tableStructure.setTable(database, table)
+        self.tableData.setTable(database, table)
 
     @Slot()
     def executeQueries(self, queries: str):
@@ -428,16 +378,12 @@ class WindowUI(QMainWindow):
         self.database.setText("Current Database:")
         self.databaseTree.clear()
         self.table.setText("Current Table:")
-        self.tableStructure.setRowCount(0)
-        self.tableStructure.setColumnCount(0)
-        self.tableData.setRowCount(0)
-        self.tableData.setColumnCount(0)
+        self.tableStructure.clearData()
+        self.tableData.clearData()
         self.genDatabaseList()
         self.queryTabs.currentWidget().results.hide()
 
-        self.tableActions[0].setEnabled(False)
-        self.tableActions[1].setEnabled(False)
-        self.tableActions[2].setEnabled(False)
+        self.tableData.setActionsClickable(False)
 
     def closeEvent(self, event):
         if self.queryTabs.checkSave():
