@@ -131,10 +131,12 @@ class SessionManager(QDialog):
 
         self.__host.setMaxLength(15)
         self.__host.setEnabled(False)
+        self.__host.textChanged.connect(self.__toggleConnectButton)
         self.__user.setEnabled(False)
+        self.__user.textChanged.connect(self.__toggleConnectButton)
         self.__password.setEnabled(False)
         self.__password.setEchoMode(QLineEdit.EchoMode.Password)
-        self.__password.textChanged.connect(lambda text: self.__connect.setEnabled(len(text) != 0))
+        self.__password.textChanged.connect(self.__toggleConnectButton)
         self.__port.setEnabled(False)
         self.__port.setMinimum(0)
         self.__port.setMaximum(65535)
@@ -175,6 +177,10 @@ class SessionManager(QDialog):
         self.setLayout(layout)
 
         self.__remove.setEnabled(False)
+
+    def __toggleConnectButton(self):
+        self.__connect.setEnabled(
+            bool(self.__host.text()) and bool(self.__user.text()) and bool(self.__password.text()))
 
     @Slot(QListWidgetItem)
     def __renameSession(self, item: QListWidgetItem):
