@@ -1,15 +1,14 @@
 from typing import Any, List, Optional, Tuple, Union
 
-from PySide6.QtCore import QDate, QDateTime, QKeyCombination, QPoint, Qt, Slot
-from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDateEdit, QDateTimeEdit, QHeaderView, QLabel, QMainWindow,
-                               QMenu, QMessageBox, QPushButton, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem,
-                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+from PySide6.QtCore import QKeyCombination, QPoint, Qt, Slot
+from PySide6.QtWidgets import (QAbstractItemView, QHeaderView, QLabel, QMainWindow, QMenu, QMessageBox, QSplitter,
+                               QTabWidget, QTableWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 from mysql.connector import MySQLConnection
 from mysql.connector.errors import Error
 
 from mysql_editor.add_database import AddDatabaseWindow
 from mysql_editor.backend import Backend
-from mysql_editor.query import QueryTab
+from mysql_editor.query import QueryTab, QueryTabViewer
 from mysql_editor.table_data_view import TableDataView
 from mysql_editor.table_structure_view import TableStructureView
 
@@ -24,7 +23,7 @@ class WindowUI(QMainWindow):
 
         self.__backend = Backend(connection)
 
-        self.queryTabs = QTabWidget()
+        self.queryTabs = QueryTabViewer(self)
         self.database = QLabel("Current Database:")
         self.databaseTree = QTreeWidget()
         self.table = QLabel("Current Table:")
@@ -32,15 +31,6 @@ class WindowUI(QMainWindow):
         self.tableData = TableDataView()
         self.displayedTable: str = ''
         self.displayedDatabase: str = ''
-
-        addButton = QPushButton("+")
-        addButton.clicked.connect(self.addQueryTab)
-
-        self.queryTabs.setCornerWidget(addButton)
-        self.queryTabs.addTab(QueryTab(self.queryTabs), "Tab - 1")
-
-        self.queryTabs.setTabsClosable(True)
-        self.queryTabs.tabCloseRequested.connect(self.removeQueryTab)
 
         self.genDatabaseList()
 
@@ -141,26 +131,6 @@ class WindowUI(QMainWindow):
             menu.addAction("Drop Table", lambda: self.dropTable(item.text(0), database))
 
         menu.exec(pos)
-
-    @Slot()
-    def addQueryTab(self):
-        tabs = sorted(
-            int(split[-1]) for split in
-            (self.queryTabs.tabText(num).replace('&', '').split(" ") for num in range(self.queryTabs.count()))
-            if "".join(split[:2]) == "Tab-" and split[-1].isdigit()
-        )
-
-        count = 1
-
-        while count in tabs:
-            count += 1
-
-        self.queryTabs.addTab(QueryTab(self.queryTabs), f"Tab - {count}")
-
-    @Slot(int)
-    def removeQueryTab(self, index):
-        if self.queryTabs.count() != 1:
-            self.queryTabs.removeTab(index)
 
     @Slot()
     def dropTable(self, table: str, database: str):
@@ -364,80 +334,9 @@ class WindowUI(QMainWindow):
 
         data, columns = self.__backend.getData(database, table)
 
-        self.tableData.clear()
-        self.tableData.setRowCount(len(data))
-        self.tableData.setColumnCount(len(columns))
-        self.tableData.setHorizontalHeaderLabels(columns)
         self.tableStructure.setHorizontalHeaderLabels(columns)
 
-        for row, tuple_ in enumerate(data):
-            self.tableData.setRowHidden(row, False)
-
-            for col, value in enumerate(tuple_):
-                if isinstance(value, bytes):
-                    value = value.decode("utf-8")
-
-                if structure[col][1][:4] == "enum":
-                    options = QComboBox()
-                    options.addItems(eval(structure[col][1][4:]))
-                    options.setCurrentText(f"{value}")
-
-                    self.tableData.setCellWidget(row, col, options)
-
-                elif structure[col][1] == "date":
-                    currentDate = QDate.fromString(f"{value}", "yyyy-MM-dd")
-
-                    date = QDateEdit()
-                    date.setDisplayFormat("yyyy-MM-dd")
-                    date.setCalendarPopup(True)
-
-                    if currentDate < date.minimumDate():
-                        date.setMinimumDate(currentDate)
-
-                    elif currentDate > date.maximumDate():
-                        date.setMaximumDate(currentDate)
-
-                    if structure[col][2] != "":
-                        default = QDate.fromString(f"{structure[col][2]}", "yyyy-MM-dd")
-
-                        if default < date.minimumDate():
-                            date.setMinimumDate(default)
-
-                        elif default > date.maximumDate():
-                            date.setMaximumDate(default)
-
-                    date.setDate(currentDate)
-
-                    self.tableData.setCellWidget(row, col, date)
-
-                elif structure[col][1] == "datetime":
-                    currentDate = QDateTime.fromString(f"{value}", "yyyy-MM-dd hh:mm:ss")
-
-                    date = QDateTimeEdit()
-                    date.setDisplayFormat("yyyy-MM-dd hh:mm:ss")
-                    date.setCalendarPopup(True)
-
-                    if currentDate < date.minimumDate():
-                        date.setMinimumDateTime(currentDate)
-
-                    elif currentDate > date.maximumDate():
-                        date.setMaximumDateTime(currentDate)
-
-                    if structure[col][2] != "":
-                        default = QDateTime.fromString(f"{structure[col][2]}", "yyyy-MM-dd hh:mm:ss")
-
-                        if default < date.minimumDate():
-                            date.setMinimumDateTime(default)
-
-                        elif default > date.maximumDate():
-                            date.setMaximumDateTime(default)
-
-                    date.setDateTime(currentDate)
-
-                    self.tableData.setCellWidget(row, col, date)
-
-                else:
-                    self.tableData.setItem(row, col, QTableWidgetItem(f"{value}"))
+        self.tableData.setTable(data, structure, columns)
 
         self.tableActions[0].setEnabled(True)
         self.tableActions[1].setEnabled(True)
@@ -541,23 +440,8 @@ class WindowUI(QMainWindow):
         self.tableActions[2].setEnabled(False)
 
     def closeEvent(self, event):
-        for index in range(self.queryTabs.count()):
-            if self.queryTabs.tabText(index)[:2] != "* ":
-                continue
+        if self.queryTabs.checkSave():
+            event.accept()
 
-            option = QMessageBox.question(
-                self,
-                "Unsaved Changes",
-                f"You have unsaved changes in {self.queryTabs.tabText(index)[2:]}. Would you like to save them?",
-                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel
-            )
-
-            if option == QMessageBox.StandardButton.Cancel:
-                event.ignore()
-
-                return
-
-            if option == QMessageBox.StandardButton.Save:
-                self.queryTabs.widget(index).save()
-
-        event.accept()
+        else:
+            event.ignore()

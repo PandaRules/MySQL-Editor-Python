@@ -1,6 +1,6 @@
-from typing import Iterable, List, Optional, Tuple, Union
+from typing import Any, Iterable, List, Optional, Tuple, Union
 
-from PySide6.QtCore import Slot
+from PySide6.QtCore import QDate, QDateTime, Slot
 from PySide6.QtWidgets import (QComboBox, QDateEdit, QDateTimeEdit, QHeaderView, QMessageBox, QTableWidget,
                                QTableWidgetItem)
 from mysql.connector.errors import Error
@@ -20,6 +20,81 @@ class TableDataView(QTableWidget):
         self.verticalHeader().sectionClicked.connect(self.updateDeleted)
 
         self.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+
+    def setTable(self, data: List[Tuple[Any]], structure: List[Tuple[Any]], columns: List[str]) -> None:
+        self.clear()
+        self.setRowCount(len(data))
+        self.setColumnCount(len(columns))
+        self.setHorizontalHeaderLabels(columns)
+
+        for row, tuple_ in enumerate(data):
+            self.setRowHidden(row, False)
+
+            for col, value in enumerate(tuple_):
+                if isinstance(value, bytes):
+                    value = value.decode("utf-8")
+
+                if structure[col][1][:4] == "enum":
+                    options = QComboBox()
+                    options.addItems(eval(structure[col][1][4:]))
+                    options.setCurrentText(f"{value}")
+
+                    self.setCellWidget(row, col, options)
+
+                elif structure[col][1] == "date":
+                    currentDate = QDate.fromString(f"{value}", "yyyy-MM-dd")
+
+                    date = QDateEdit()
+                    date.setDisplayFormat("yyyy-MM-dd")
+                    date.setCalendarPopup(True)
+
+                    if currentDate < date.minimumDate():
+                        date.setMinimumDate(currentDate)
+
+                    elif currentDate > date.maximumDate():
+                        date.setMaximumDate(currentDate)
+
+                    if structure[col][2] != "":
+                        default = QDate.fromString(f"{structure[col][2]}", "yyyy-MM-dd")
+
+                        if default < date.minimumDate():
+                            date.setMinimumDate(default)
+
+                        elif default > date.maximumDate():
+                            date.setMaximumDate(default)
+
+                    date.setDate(currentDate)
+
+                    self.setCellWidget(row, col, date)
+
+                elif structure[col][1] == "datetime":
+                    currentDate = QDateTime.fromString(f"{value}", "yyyy-MM-dd hh:mm:ss")
+
+                    date = QDateTimeEdit()
+                    date.setDisplayFormat("yyyy-MM-dd hh:mm:ss")
+                    date.setCalendarPopup(True)
+
+                    if currentDate < date.minimumDate():
+                        date.setMinimumDateTime(currentDate)
+
+                    elif currentDate > date.maximumDate():
+                        date.setMaximumDateTime(currentDate)
+
+                    if structure[col][2] != "":
+                        default = QDateTime.fromString(f"{structure[col][2]}", "yyyy-MM-dd hh:mm:ss")
+
+                        if default < date.minimumDate():
+                            date.setMinimumDateTime(default)
+
+                        elif default > date.maximumDate():
+                            date.setMaximumDateTime(default)
+
+                    date.setDateTime(currentDate)
+
+                    self.setCellWidget(row, col, date)
+
+                else:
+                    self.setItem(row, col, QTableWidgetItem(f"{value}"))
 
     @Slot(int)
     def updateDeleted(self, row: int):
