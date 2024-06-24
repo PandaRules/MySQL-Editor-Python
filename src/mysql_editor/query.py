@@ -1,7 +1,7 @@
-from typing import Union
+from typing import Optional
 
 from PySide6.QtCore import Slot
-from PySide6.QtWidgets import QTabWidget, QTextEdit, QVBoxLayout, QWidget, QFileDialog
+from PySide6.QtWidgets import QFileDialog, QTabWidget, QTextEdit, QVBoxLayout, QWidget
 
 from mysql_editor.files import File
 
@@ -15,7 +15,7 @@ class QueryTab(QWidget):
         self.queryBox = QTextEdit()
         self.results = QTabWidget()
 
-        self.file: Union[File, None] = None
+        self.file: Optional[File] = None
 
         self.queryBox.textChanged.connect(self.checkIfEdited)
 

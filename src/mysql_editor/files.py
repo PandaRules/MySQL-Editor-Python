@@ -1,11 +1,11 @@
 from io import TextIOWrapper
-from typing import Union
+from typing import Optional
 
 
 class File:
     def __init__(self):
         self.name: str = ""
-        self.file: Union[TextIOWrapper, None] = None
+        self.file: Optional[TextIOWrapper] = None
         self.contents: str = ""
 
     def open(self, name: str, mode: str):
