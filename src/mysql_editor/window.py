@@ -202,6 +202,8 @@ class WindowUI(QMainWindow):
         QMessageBox.information(self, "Success", "Successfully Dropped!")
 
     def genDatabaseList(self):
+        self.databaseTree.blockSignals(True)
+
         for (database,) in self.__backend.getDatabases():
             databaseItem = QTreeWidgetItem(self.databaseTree, (database,))
 
@@ -228,6 +230,8 @@ class WindowUI(QMainWindow):
                     tableItem = QTreeWidgetItem(viewsItem, table)
                     tableItem.setFlags(tableItem.flags() | Qt.ItemFlag.ItemIsEditable)
 
+        self.databaseTree.blockSignals(False)
+
     @Slot(QTreeWidgetItem)
     def itemEdited(self, item: QTreeWidgetItem):
         if not item.parent().parent():
@@ -235,8 +239,9 @@ class WindowUI(QMainWindow):
 
         database: str = item.parent().parent().text(0)
 
-        existing: List[str] = self.__backend.getTables(database, "BASE TABLE") + self.__backend.getTables(database,
-                                                                                                          "VIEW")
+        existing: List[str] = [table for (table, _) in
+                               self.__backend.getTables(database, "BASE TABLE") + self.__backend.getTables(database,
+                                                                                                           "VIEW")]
 
         for index in range(item.childCount()):
             text: str = item.child(index).text(0)
