@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from mysql.connector import connect
 from mysql.connector.errors import Error
 
-from mysql_editor.window import Window
+from mysql_editor.window import WindowUI
 
 global connection
 
@@ -277,5 +277,5 @@ class SessionManager(QDialog):
 
         self.close()
 
-        window = Window(connection)
+        window = WindowUI(connection)
         window.show()

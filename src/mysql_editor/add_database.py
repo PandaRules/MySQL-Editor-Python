@@ -1,18 +1,20 @@
-import mysql.connector.errors
+from typing import Optional
+
+from mysql.connector.errors import Error
 from PySide6.QtCore import Slot
-from PySide6.QtWidgets import (
-    QDialog, QFormLayout, QLabel, QLayout, QLineEdit, QMessageBox, QPushButton, QTreeWidgetItem, QTreeWidget
-)
-from mysql.connector.cursor import MySQLCursor
+from PySide6.QtWidgets import (QDialog, QFormLayout, QLabel, QLayout, QLineEdit, QMessageBox, QPushButton, QTreeWidget,
+                               QTreeWidgetItem)
+
+from mysql_editor.backend import Backend
 
 
 class AddDatabaseWindow(QDialog):
-    def __init__(self, cursor: MySQLCursor, databaseTree: QTreeWidget):
+    def __init__(self, databaseTree: QTreeWidget):
         super().__init__()
 
         self.setWindowTitle("Add database")
 
-        self.Cursor: MySQLCursor = cursor
+        self.__backend = Backend()
         self.databaseTree: QTreeWidget = databaseTree
 
         self.entry = QLineEdit()
@@ -29,10 +31,9 @@ class AddDatabaseWindow(QDialog):
     def add(self):
         database: str = self.entry.text()
 
-        try:
-            self.Cursor.execute(f"CREATE DATABASE `{database}`;")
+        error: Optional[Error] = self.__backend.addDatabase(database)
 
-        except mysql.connector.errors.Error as error:
+        if error is not None:
             QMessageBox.critical(self, "Error", error.msg)
 
             return

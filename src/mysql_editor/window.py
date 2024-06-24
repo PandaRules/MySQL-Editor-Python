@@ -1,22 +1,20 @@
-from typing import List, Union, Iterable
+from typing import Any, List, Optional, Tuple, Union
 
-import mysql.connector.errors
-from PySide6.QtCore import Slot, Qt, QDate, QKeyCombination, QDateTime, QPoint
-from PySide6.QtWidgets import (
-    QHeaderView, QLabel, QMainWindow, QMessageBox, QPushButton, QSplitter, QTableWidget,
-    QTableWidgetItem, QTabWidget, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget, QComboBox, QDateEdit,
-    QAbstractItemView, QDateTimeEdit, QMenu
-)
+from PySide6.QtCore import QDate, QDateTime, QKeyCombination, QPoint, Qt, Slot
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QDateEdit, QDateTimeEdit, QHeaderView, QLabel, QMainWindow,
+                               QMenu, QMessageBox, QPushButton, QSplitter, QTabWidget, QTableWidget, QTableWidgetItem,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 from mysql.connector import MySQLConnection
-from mysql.connector.cursor import MySQLCursor
+from mysql.connector.errors import Error
 
 from mysql_editor.add_database import AddDatabaseWindow
+from mysql_editor.backend import Backend
 from mysql_editor.query import QueryTab
 from mysql_editor.table_data_view import TableDataView
 from mysql_editor.table_structure_view import TableStructureView
 
 
-class Window(QMainWindow):
+class WindowUI(QMainWindow):
     def __init__(self, connection: MySQLConnection):
         super().__init__(None)
 
@@ -24,7 +22,7 @@ class Window(QMainWindow):
         self.setWindowState(Qt.WindowState.WindowMaximized)
         self.setCentralWidget(QWidget())
 
-        self.Cursor: MySQLCursor = connection.cursor()
+        self.__backend = Backend(connection)
 
         self.queryTabs = QTabWidget()
         self.database = QLabel("Current Database:")
@@ -74,7 +72,8 @@ class Window(QMainWindow):
 
         tableMenu = self.menuBar().addMenu("Table")
         tableMenu.addAction("Add New Entry", lambda: self.tableData.setRowCount(self.tableData.rowCount() + 1))
-        tableMenu.addAction("Save Changes", lambda: self.saveEdits(self.displayedDatabase, self.displayedTable))
+        tableMenu.addAction("Save Changes",
+                            lambda: self.tableData.saveEdits(self.displayedDatabase, self.displayedTable))
         tableMenu.addAction("Cancel Changes", lambda: self.showTableInfo(self.displayedDatabase, self.displayedTable))
 
         self.tableActions = tableMenu.actions()
@@ -116,7 +115,7 @@ class Window(QMainWindow):
         menu = QMenu()
 
         if item is None:
-            menu.addAction("Add Database", lambda: AddDatabaseWindow(self.Cursor, self.databaseTree).exec())
+            menu.addAction("Add Database", lambda: AddDatabaseWindow(self.databaseTree).exec())
 
         elif not item.parent():
             database: str = item.text(0)
@@ -165,11 +164,10 @@ class Window(QMainWindow):
         ) != QMessageBox.StandardButton.Yes:
             return
 
-        try:
-            self.Cursor.execute(f"DROP TABLE `{database}`.`{table}`;")
+        error: Optional[Error] = self.__backend.dropTable(database, table)
 
-        except mysql.connector.errors.Error as e:
-            QMessageBox.critical(self, "Error", e.msg)
+        if error is not None:
+            QMessageBox.critical(self, "Error", error.msg)
 
             return
 
@@ -209,11 +207,10 @@ class Window(QMainWindow):
         ) != QMessageBox.StandardButton.Yes:
             return
 
-        try:
-            self.Cursor.execute(f"DROP DATABASE `{database}`;")
+        error: Optional[Error] = self.__backend.dropDatabase(database)
 
-        except mysql.connector.errors.Error as e:
-            QMessageBox.critical(self, "Error", e.msg)
+        if error is not None:
+            QMessageBox.critical(self, "Error", error.msg)
 
             return
 
@@ -241,20 +238,16 @@ class Window(QMainWindow):
         QMessageBox.information(self, "Success", "Successfully Dropped!")
 
     def genDatabaseList(self):
-        self.Cursor.execute("SHOW DATABASES;")
-
-        for database in self.Cursor.fetchall():
+        for database in self.__backend.getDatabases():
             databaseItem = QTreeWidgetItem(database)
             self.databaseTree.addTopLevelItem(databaseItem)
 
-            self.Cursor.execute(f"SHOW TABLES FROM `{database[0]}`")
-
             if database[0] in ("information_schema", "mysql", "sys", "performance"):
-                for table in self.Cursor.fetchall():
+                for table in self.__backend.getTables(database[0]):
                     databaseItem.addChild(QTreeWidgetItem(table))
 
             else:
-                for table in self.Cursor.fetchall():
+                for table in self.__backend.getTables(database[0]):
                     tableItem = QTreeWidgetItem(table)
                     tableItem.setFlags(tableItem.flags() | Qt.ItemFlag.ItemIsEditable)
 
@@ -267,8 +260,7 @@ class Window(QMainWindow):
 
         database: str = item.parent().text(0)
 
-        self.Cursor.execute(f"SHOW TABLES FROM {database};")
-        existing: list[str] = [tuple_[0] for tuple_ in self.Cursor.fetchall()]
+        existing: List[str] = self.__backend.getTables(database)
 
         for index in range(item.childCount()):
             text: str = item.child(index).text(0)
@@ -281,11 +273,10 @@ class Window(QMainWindow):
         if not existing:
             return
 
-        try:
-            self.Cursor.execute(f"RENAME TABLE `{database}`.`{existing[0]}` TO `{database}`.`{item.text(0)}`;")
+        error: Optional[Error] = self.__backend.renameTable(database, existing[0], item.text(0))
 
-        except mysql.connector.errors.Error as e:
-            QMessageBox.critical(self, "Error renaming table", e.msg)
+        if error is not None:
+            QMessageBox.critical(self, "Error", error.msg)
 
             return
 
@@ -320,7 +311,7 @@ class Window(QMainWindow):
 
         self.displayedDatabase = item.text(0)
 
-        self.Cursor.execute(f"USE `{self.displayedDatabase}`")
+        self.__backend.setDatabase(self.displayedDatabase)
 
         self.database.setText(f"Current Database: {self.displayedDatabase}")
 
@@ -331,13 +322,12 @@ class Window(QMainWindow):
 
         self.table.setText(f"Current Table: `{table}` From `{database}`")
 
-        self.Cursor.execute(f"DESC `{database}`.`{table}`;")
-        structure = self.Cursor.fetchall()
+        structure, columns = self.__backend.getTableStructure(database, table)
 
         self.tableStructure.clear()
         self.tableStructure.setColumnCount(len(structure))
-        self.tableStructure.setRowCount(len(self.Cursor.column_names) - 1)
-        self.tableStructure.setVerticalHeaderLabels(self.Cursor.column_names[1:])
+        self.tableStructure.setRowCount(len(columns) - 1)
+        self.tableStructure.setVerticalHeaderLabels(columns[1:])
 
         for row, tuple_ in enumerate(structure):
             for col, value in enumerate(tuple_[1:]):
@@ -346,15 +336,13 @@ class Window(QMainWindow):
 
                 self.tableStructure.setCellWidget(col, row, QLabel(value))
 
-        self.Cursor.execute(f'SELECT * FROM `{database}`.`{table}`;')
-
-        data = self.Cursor.fetchall()
+        data = self.__backend.getData(database, table)
 
         self.tableData.clear()
         self.tableData.setRowCount(len(data))
-        self.tableData.setColumnCount(len(self.Cursor.column_names))
-        self.tableData.setHorizontalHeaderLabels(self.Cursor.column_names)
-        self.tableStructure.setHorizontalHeaderLabels(self.Cursor.column_names)
+        self.tableData.setColumnCount(len(columns))
+        self.tableData.setHorizontalHeaderLabels(columns)
+        self.tableStructure.setHorizontalHeaderLabels(columns)
 
         for row, tuple_ in enumerate(data):
             self.tableData.setRowHidden(row, False)
@@ -404,21 +392,21 @@ class Window(QMainWindow):
                     date.setCalendarPopup(True)
 
                     if currentDate < date.minimumDate():
-                        date.setMinimumDate(currentDate)
+                        date.setMinimumDateTime(currentDate)
 
                     elif currentDate > date.maximumDate():
-                        date.setMaximumDate(currentDate)
+                        date.setMaximumDateTime(currentDate)
 
                     if structure[col][2] != "":
                         default = QDateTime.fromString(f"{structure[col][2]}", "yyyy-MM-dd hh:mm:ss")
 
                         if default < date.minimumDate():
-                            date.setMinimumDate(default)
+                            date.setMinimumDateTime(default)
 
                         elif default > date.maximumDate():
-                            date.setMaximumDate(default)
+                            date.setMaximumDateTime(default)
 
-                    date.setDate(currentDate)
+                    date.setDateTime(currentDate)
 
                     self.tableData.setCellWidget(row, col, date)
 
@@ -444,101 +432,6 @@ class Window(QMainWindow):
             self.tableData.verticalHeader().sectionClicked.connect(self.tableData.updateDeleted)
 
     @Slot()
-    def saveEdits(self, database: str, table: str):
-        unique, uniqueCol = self.tableData.getUnique()
-
-        rowCount = 0
-
-        queries: List[str] = []
-        parameters: List[Iterable] = []
-
-        self.Cursor.execute(f'SELECT * FROM `{database}`.`{table}`')
-
-        for row, tuple_ in enumerate(self.Cursor.fetchall()):
-            uniqueValue = self.tableData.item(row, uniqueCol).text()
-
-            if row in self.tableData.deleted:
-                queries.append(f"DELETE FROM `{database}`.`{table}` WHERE `{unique}` = %s")
-                parameters.append((uniqueValue,))
-
-                continue
-
-            changedValues: List[str] = []
-
-            query = ""
-
-            for col in range(self.tableData.columnCount()):
-                cell = self.tableData.item(row, col)
-
-                if cell is not None:
-                    value = cell.text()
-
-                else:
-                    cell: Union[QComboBox, QDateEdit, QDateTimeEdit] = self.tableData.cellWidget(row, col)
-
-                    if isinstance(cell, QComboBox):
-                        value = cell.currentText()
-
-                    elif isinstance(cell, QDateTimeEdit):
-                        value = cell.dateTime().toString("yyyy-MM-dd hh:mm:ss")
-
-                    else:
-                        value = cell.date().toString("yyyy-MM-dd")
-
-                if value == f"{tuple_[col]}":
-                    continue
-
-                changedValues.append(value)
-                query += f"`{self.tableStructure.horizontalHeaderItem(col).text()}` = %s, "
-
-            if query:
-                queries.append(f"UPDATE `{database}`.`{table}` SET {query[:-2]} WHERE `{unique}` = '{uniqueValue}'")
-                parameters.append(changedValues)
-
-            rowCount += 1
-
-        for row in range(rowCount, self.tableData.rowCount()):
-            query: str = ""
-            changedValues: List[str] = []
-
-            for col in range(self.tableData.columnCount()):
-                cell: QTableWidgetItem = self.tableData.item(row, col)
-
-                if cell is not None:
-                    value = cell.text()
-
-                else:
-                    cell: Union[QComboBox, QDateEdit, QDateTimeEdit] = self.tableData.cellWidget(row, col)
-
-                    if isinstance(cell, QComboBox):
-                        value = cell.currentText()
-
-                    elif isinstance(cell, QDateTimeEdit):
-                        value = cell.dateTime().toString("yyyy-MM-dd hh:mm:ss")
-
-                    else:
-                        value = cell.date().toString("yyyy-MM-dd")
-
-                changedValues.append(value)
-                query += "%s, "
-
-            queries.append(f"INSERT INTO `{database}`.`{table}` VALUES ({query[:-2]});")
-            parameters.append(changedValues)
-
-        try:
-            for query, parameter in zip(queries, parameters):
-                self.Cursor.execute(query, parameter)
-
-        except mysql.connector.errors.Error as error:
-            QMessageBox.critical(self, "Error", error.msg)
-
-            return
-
-        QMessageBox.information(self, "Success", "Successfully Executed")
-
-        self.tableData.resizeColumnsToContents()
-
-    @Slot()
     def executeQueries(self, queries: str):
         if not queries.strip():
             return
@@ -557,11 +450,10 @@ class Window(QMainWindow):
             if not query:
                 continue
 
-            try:
-                self.Cursor.execute(query)
+            result: Union[Error, Tuple[List[Any], List[str]]] = self.__backend.executeQuery(query)
 
-            except mysql.connector.errors.Error as error:
-                QMessageBox.critical(self, f"Error executing query", f"In query {i + 1}:\n\n{query}\n\n{error.msg}")
+            if isinstance(result, Error):
+                QMessageBox.critical(self, f"Error executing query", f"In query {i + 1}:\n\n{query}\n\n{result.msg}")
 
                 break
 
@@ -582,9 +474,10 @@ class Window(QMainWindow):
                     self.database.setText(f"Current Database: {query[index:]}")
 
             elif any(clause in queryUpper for clause in ("SELECT", "SHOW", "EXPLAIN", "DESC", "DESCRIBE")):
-                data = self.Cursor.fetchall()
-                table = QTableWidget(len(data), len(self.Cursor.column_names))
-                table.setHorizontalHeaderLabels(self.Cursor.column_names)
+                data, columns = result
+
+                table = QTableWidget(len(data), len(columns))
+                table.setHorizontalHeaderLabels(columns)
                 table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
 
                 for row, datum in enumerate(data):
