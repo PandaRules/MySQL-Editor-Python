@@ -4,7 +4,8 @@ from typing import List
 
 from PySide6.QtCore import Slot, Qt, QSettings, QKeyCombination
 from PySide6.QtWidgets import (
-    QDialog, QGridLayout, QHBoxLayout, QLabel, QLayout, QLineEdit, QMenuBar, QMessageBox, QPushButton, QStyleFactory,
+    QDialog, QGridLayout, QHBoxLayout, QLabel, QLayout, QLineEdit, QMenuBar, QMessageBox, QPushButton, QSpinBox,
+    QStyleFactory,
     QApplication, QListWidget, QListWidgetItem
 )
 from mysql.connector import connect
@@ -50,35 +51,44 @@ class SessionFileHandler(object):
         return sessionNames
 
     @classmethod
-    def getSessionDetails(cls, session: str) -> tuple[str, str]:
+    def getSessionDetails(cls, session: str) -> tuple[str, str, int]:
         cls.__sessions.beginGroup(session)
 
         host: str = cls.__sessions.value("host")
         user: str = cls.__sessions.value("user")
 
+        try:
+            port: int = int(cls.__sessions.value("port"))
+
+        except (ValueError, TypeError):
+            port: int = 3306
+
         cls.__sessions.endGroup()
 
-        return host, user
+        return host, user, port
 
     @classmethod
     def renameSession(cls, old: str, new: str) -> None:
         cls.__sessions.beginGroup(old)
         host = cls.__sessions.value("host")
         user = cls.__sessions.value("user")
+        port = cls.__sessions.value("port")
         cls.__sessions.endGroup()
 
         cls.__sessions.beginGroup(new)
         cls.__sessions.setValue("host", host)
         cls.__sessions.setValue("user", user)
+        cls.__sessions.setValue("port", port)
         cls.__sessions.endGroup()
 
         cls.__sessions.remove(old)
 
     @classmethod
-    def updateSession(cls, session: str, host: str, user: str):
+    def updateSession(cls, session: str, host: str, user: str, port: int):
         cls.__sessions.beginGroup(session)
         cls.__sessions.setValue("host", host)
         cls.__sessions.setValue("user", user)
+        cls.__sessions.setValue("port", port)
         cls.__sessions.endGroup()
 
     @classmethod
@@ -86,6 +96,7 @@ class SessionFileHandler(object):
         cls.__sessions.beginGroup(session)
         cls.__sessions.setValue("host", "")
         cls.__sessions.setValue("user", "")
+        cls.__sessions.setValue("port", 3306)
         cls.__sessions.endGroup()
 
     @classmethod
@@ -115,6 +126,7 @@ class SessionManager(QDialog):
         self.__host = QLineEdit()
         self.__user = QLineEdit()
         self.__password = QLineEdit()
+        self.__port = QSpinBox(self)
         self.__connect = QPushButton("Connect")
 
         self.__host.setMaxLength(15)
@@ -123,6 +135,9 @@ class SessionManager(QDialog):
         self.__password.setEnabled(False)
         self.__password.setEchoMode(QLineEdit.EchoMode.Password)
         self.__password.textChanged.connect(lambda text: self.__connect.setEnabled(len(text) != 0))
+        self.__port.setEnabled(False)
+        self.__port.setMinimum(0)
+        self.__port.setMaximum(65535)
         self.__connect.setEnabled(False)
         self.__connect.clicked.connect(self.__openWindow)
         self.__sessions.itemSelectionChanged.connect(self.__showCredentials)
@@ -137,7 +152,9 @@ class SessionManager(QDialog):
         credential_layout.addWidget(self.__user, 1, 1)
         credential_layout.addWidget(QLabel("Password:"), 2, 0)
         credential_layout.addWidget(self.__password, 2, 1)
-        credential_layout.addWidget(self.__connect, 3, 0, 1, 2)
+        credential_layout.addWidget(QLabel("Port:"), 3, 0)
+        credential_layout.addWidget(self.__port, 3, 1)
+        credential_layout.addWidget(self.__connect, 4, 0, 1, 2)
 
         self.__menubar = QMenuBar()
         self.__menubar.addAction("New Session", QKeyCombination(Qt.Modifier.CTRL, Qt.Key.Key_N), self.__newSession)
@@ -215,10 +232,12 @@ class SessionManager(QDialog):
         self.__host.clear()
         self.__user.clear()
         self.__password.clear()
+        self.__port.setValue(3306)
 
         self.__host.setEnabled(False)
         self.__user.setEnabled(False)
         self.__password.setEnabled(False)
+        self.__port.setEnabled(False)
         self.__connect.setEnabled(False)
 
         SessionFileHandler.removeSession(session)
@@ -236,22 +255,27 @@ class SessionManager(QDialog):
             self.__host.clear()
             self.__user.clear()
             self.__password.clear()
+            self.__port.setValue(3306)
 
             self.__host.setEnabled(True)
             self.__user.setEnabled(True)
             self.__password.setEnabled(True)
+            self.__port.setEnabled(False)
+            self.__connect.setEnabled(False)
 
             return
 
         self.__host.setEnabled(True)
         self.__user.setEnabled(True)
         self.__password.setEnabled(True)
+        self.__port.setEnabled(True)
         self.__connect.setEnabled(len(self.__password.text()) != 0)
 
-        host, user = SessionFileHandler.getSessionDetails(item.text())
+        host, user, port = SessionFileHandler.getSessionDetails(item.text())
 
         self.__host.setText(host)
         self.__user.setText(user)
+        self.__port.setValue(port)
 
         self.__remove.setEnabled(True)
 
@@ -262,9 +286,10 @@ class SessionManager(QDialog):
         host = self.__host.text()
         user = self.__user.text()
         password = self.__password.text()
+        port = self.__port.value()
 
         try:
-            connection = connect(host=host, user=user, password=password)
+            connection = connect(host=host, user=user, password=password, port=port)
 
         except Error as error:
             QMessageBox.critical(self, "Error", error.msg)
@@ -273,7 +298,7 @@ class SessionManager(QDialog):
 
         connection.autocommit = True
 
-        SessionFileHandler.updateSession(self.__sessions.currentItem().text(), host, user)
+        SessionFileHandler.updateSession(self.__sessions.currentItem().text(), host, user, port)
 
         self.close()
 
