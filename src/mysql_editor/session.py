@@ -51,7 +51,7 @@ class SessionFileHandler(object):
         return sessionNames
 
     @classmethod
-    def getSessionDetails(cls, session: str) -> tuple[str, str, int]:
+    def getSessionDetails(cls, session: str) -> (str, str, int):
         cls.__sessions.beginGroup(session)
 
         host: str = cls.__sessions.value("host")
