@@ -1,4 +1,5 @@
-from typing import Any, Iterable, List, Optional, Self, Tuple, Union
+from typing import Any, Iterable, List, Optional, Tuple, Union
+from typing_extensions import Self
 
 from mysql.connector import MySQLConnection
 from mysql.connector.cursor import MySQLCursor
